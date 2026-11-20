@@ -1,6 +1,12 @@
-# SplitKey 手册
+# SplitKey
 
 双屏掌机（Retroid Pocket Duo）的下屏键盘 + 触摸板，驱动上屏的**真实系统鼠标**和按键输入。
+
+键盘和触摸板是**同一个悬浮窗**，一起出现、一起消失。不用时只收起窗口，
+服务常驻，点输入框立刻回来。
+
+中文输入用 [librime](https://github.com/rime/librime)（Rime 引擎）接进来，
+仓里不带任何词库或第三方二进制，全部靠脚本拉 —— 见第 2 节。
 
 - 上屏 = `displayId 0`，1080×1920（旋转后 1920×1080）
 - 下屏 = `displayId 2`，1280×960，触摸设备 `/dev/input/event6`（`fts_ts_sec`）
@@ -40,58 +46,80 @@
 
 ---
 
-## 2. 编译
+## 2. 准备环境
 
-### APK（无 Gradle）
+仓库里**不含**任何第三方二进制或词库，都靠脚本拉。需要的东西：
+
+| 依赖 | 用途 | 怎么来 |
+|---|---|---|
+| build-tools | `aapt2/d8/zipalign/apksigner` | `scripts/fetch-buildtools.sh` |
+| android.jar | 编译期 API | 同上（`platform-36`） |
+| NDK r29 | 交叉编译 librime | `scripts/build-librime.sh` 自动下 |
+| librime + 依赖 | 中文输入引擎 | 同上 |
+| Rime 词库 | 拼音词典 | 同上（librime 自带 minimal 词库） |
+| OpenCC 字典 | 繁→简转换 | 主机侧 `opencc` 包，`build.sh` 自动拷 |
+| aarch64-linux-gnu-gcc | 编 uimouse | `device/install.sh` 会提示 |
+
+一键：
 
 ```bash
-cd ~/Project/splitkey
+./scripts/fetch-buildtools.sh    # build-tools + android.jar
+./scripts/build-librime.sh       # NDK + librime + 依赖（首次 20~40 分钟）
+```
+
+## 3. 编译
+
+```bash
 ./build.sh
 # 产物 build/splitkey.apk
-adb install -r build/splitkey.apk
 ```
 
-`build.sh` 用 `~/Project/android-buildtools/android-14` 的 `aapt2/d8/zipalign/apksigner`，
-`android-36` 的 `android.jar`。
-
-### uimouse（虚拟鼠标，C 程序）
-
-源码：`~/.hermes/cache/scratch/uimouse.c`
+`build.sh` 全部路径可用环境变量覆盖：
 
 ```bash
-sudo pacman -S aarch64-linux-gnu-gcc
-aarch64-linux-gnu-gcc -static -O2 -o uimouse uimouse.c
-adb push uimouse /data/local/tmp/uimouse
-adb shell "su -c 'chmod 755 /data/local/tmp/uimouse'"
+ANDROID_BUILDTOOLS=/path/to/android-buildtools \
+LIBSPLITKEY_RIME_SO=/path/to/libsplitkey_rime.so \
+RIME_DATA=/path/to/rime/data/minimal \
+./build.sh
 ```
 
-**必须用 libc 编译，不要手写 `svc #0`。** 见第 7 节。
+默认值：
+
+| 变量 | 默认 |
+|---|---|
+| `ANDROID_BUILDTOOLS` | `~/Project/android-buildtools` |
+| `BT` | `$ANDROID_BUILDTOOLS/android-14` |
+| `PLATFORM` | `$ANDROID_BUILDTOOLS/android-36` |
+| `LIBSPLITKEY_RIME_SO` | `~/Project/splitkey-librime-build/out/libsplitkey_rime.so` |
+| `RIME_DATA` | `~/Project/splitkey-librime-build/librime/data/minimal` |
+| `OPENCC_DATA` | `/usr/share/opencc` |
+
+词库和 OpenCC 字典都**不进仓库**（体积 + 许可证），编的时候从本地拷进 `assets/`，
+这个目录也在 `.gitignore` 里。
+
+## 4. 部署
+
+```bash
+ADB_SERIAL=192.168.1.10:5555 ./device/install.sh
+```
+
+它做四件事（顺序不能乱）：
+
+1. 交叉编译并推 `uimouse`（虚拟鼠标，C 程序）
+2. 推 `sk_daemon.sh`（按键注入 daemon）
+3. `adb install -r` 装 APK
+4. **`ime set com.splitkey.ime/.HiddenIme`** —— 重装 APK 会把默认输入法重置回
+   Gboard，不重设的话 `commitText` 无处可去，中文打不出来
+5. 拉起 uimouse + daemon + `KeyboardService`
+
+开机自启：`device/splitkey-boot.sh`（`sleep 15` 后拉起上面几项），
+自己放到设备的开机脚本里。
+
+后台进程**必须断掉 stdin**（`</dev/null`），否则 `adb shell` 会一直挂着不返回。
 
 ---
 
-## 3. 部署
-
-首次或重装后：
-
-```bash
-# 1. 输入法（重装 APK 会把默认输入法重置回 Gboard）
-adb shell "su -c 'ime set com.splitkey.ime/.HiddenIme'"
-
-# 2. 虚拟鼠标
-adb shell "su -c 'setsid /data/local/tmp/uimouse >/dev/null 2>&1 </dev/null &'"
-
-# 3. 按键注入 daemon
-adb shell "su -c 'setsid sh /data/local/tmp/sk_daemon.sh >/dev/null 2>&1 </dev/null &'"
-
-# 4. 键盘悬浮窗（点桌面 SplitKey 图标也行）
-adb shell "am start-foreground-service -n com.splitkey.ime/.KeyboardService"
-```
-
-开机自启脚本：`~/.hermes/cache/scratch/splitkey-boot.sh`（`sleep 15` 后拉起上面四步）。
-
----
-
-## 4. 日常使用
+## 5. 日常使用
 
 | 操作 | 效果 |
 |---|---|
@@ -106,7 +134,7 @@ adb shell "am start-foreground-service -n com.splitkey.ime/.KeyboardService"
 
 ---
 
-## 5. 键盘
+## 6. 键盘
 
 布局纯数据在 `KeyboardLayout.java`，改布局只动这个文件。
 
@@ -131,7 +159,7 @@ none        空位（占列不画不可点）
 
 ---
 
-## 6. 触摸板
+## 7. 触摸板
 
 `TouchpadView.java`。对齐 Windows 精密触摸板：
 
@@ -170,7 +198,7 @@ niri / libinput 也是这个规则。
 
 ---
 
-## 7. 鼠标注入（最容易踩坑的部分）
+## 8. 鼠标注入（最容易踩坑的部分）
 
 ### 只有 uinput 能画出系统光标
 
@@ -216,7 +244,7 @@ adb shell "su -c 'cat /sys/class/input/eventN/device/capabilities/rel'"
 
 ---
 
-## 8. 焦点与生命周期（关键设计）
+## 9. 焦点与生命周期（关键设计）
 
 ```
 上屏输入框获得焦点
@@ -247,7 +275,7 @@ adb shell "su -c 'cat /sys/class/input/eventN/device/capabilities/rel'"
 
 ---
 
-## 9. 排查
+## 10. 排查
 
 ```bash
 # 键盘/焦点/鼠标决策
@@ -278,46 +306,61 @@ adb shell "dumpsys activity service com.android.systemui/.SystemUIService | grep
 
 ---
 
-## 10. 文件清单
+## 11. 文件清单
 
 ```
 src/com/splitkey/ime/
-  KeyboardService.java  常驻服务：窗口、焦点、胶囊、光标、触摸板接线   (547 行)
-  TouchpadView.java     触摸板手势                                    (545 行)
-  KeyboardView.java     键盘渲染 + 命中判定                            (393 行)
-  HiddenIme.java        0 高度 IME：commitText + 焦点广播              (228 行)
-  CapsuleView.java      候选胶囊（折叠态纯透明）                       (198 行)
-  Shuttle.java          输出分发：ASCII→FIFO，Unicode→广播             (144 行)
-  KeyboardLayout.java   布局纯数据（改布局只动这里）                   (111 行)
-  KeySpec.java          键声明                                        (54 行)
-  RimeEngine.java       输入法引擎占位（现在返回 NULL）                  (40 行)
-  Launcher.java         桌面图标：拉起服务后立刻退出                     (32 行)
-  OutputChannel.java    统一输出接口                                    (22 行)
-
-injector/com/splitkey/
-  Injector.java         injectInputEvent 路线（废弃，只供 hover 测试）
-  MouseTest.java        一次性验证脚本
+  KeyboardService.java  常驻服务：窗口、焦点、胶囊、触摸板接线                                  (653 行)
+  KeyboardView.java     键盘渲染 + 命中判定 + 长按连发                                   (600 行)
+  TouchpadView.java     触摸板手势 + 光标/滚轮                                        (596 行)
+  RimeEngineImpl.java   librime 会话：输入、候选、提交                                  (264 行)
+  CapsuleView.java      候选胶囊（无焦点时纯透明）                                        (238 行)
+  HiddenIme.java        0 高度 IME：commitText + 焦点广播                           (256 行)
+  Theme.java            明/暗主题（自动跟随系统 / 手动固定）                                 (170 行)
+  PageActivity.java     设置页与许可页的基类                                           (145 行)
+  KeyboardLayout.java   布局纯数据（改布局只动这里）                                       (126 行)
+  Shuttle.java          输出分发：ASCII→FIFO，Unicode→HiddenIme                    (149 行)
+  RimeNative.java       JNI 声明                                               (77 行)
+  SettingsActivity.java 设置界面                                                 (66 行)
+  KeySpec.java          键声明                                                  (84 行)
+  RimeEngine.java       引擎接口 + NULL 空实现                                      (52 行)
+  LicensesActivity.java 第三方许可原文                                              (68 行)
+  ImeBinder.java        让系统真正绑定 HiddenIme（ime set）                           (51 行)
+  Launcher.java         桌面图标：拉起服务后立刻退出                                       (29 行)
+  OutputChannel.java    统一输出接口                                               (22 行)
 ```
 
-配套设备端脚本（不在本仓库）：
-
 ```
-~/.hermes/cache/scratch/uimouse.c           虚拟鼠标源码（需交叉编译）
-~/.hermes/cache/scratch/sk_daemon.sh        按键注入 daemon
-~/.hermes/cache/scratch/splitkey-boot.sh    开机自启
+jni/splitkey_rime.cpp        JNI 桥：librime 会话、选项、上下文
+scripts/build-librime.sh     交叉编译 librime + 依赖，链接出 .so
+scripts/fetch-buildtools.sh  下载 build-tools + android.jar
+build.sh                     编 APK（aapt2 + javac + d8 + apksigner，无 Gradle）
+build-injector.sh            编/部署 injectInputEvent 注入器（调试用）
+
+device/uimouse.c             虚拟鼠标（uinput），需交叉编译
+device/sk_daemon.sh          按键注入 daemon（FIFO 读命令）
+device/splitkey-boot.sh      开机自启
+device/install.sh            一键：编 uimouse + 推文件 + 装 APK + 设 IME + 拉起
 ```
 
 ---
 
-## 11. 已知未完成
+## 12. 已知未完成
 
-- **Rime 未接入**：`RimeEngine.NULL`，候选词是假的
-- **中文路径**：`Shuttle.commitRemote()` → 广播 → `HiddenIme.commitText()` 通了，但没接引擎
-- **`✕` 之后进程常驻**：没有"彻底退出"的入口
+- **候选胶囊点击选择**：`wordRects` 在 `onDraw` 里算，点击命中可能滞后。
+  键盘侧已经能选（左右键移高亮 + 数字键直选），所以这条优先级不高
+- **`✕` 之后进程常驻**：没有「彻底退出」的入口，只能 `am force-stop`
+- **终端类 app 白名单写死**：`HiddenIme.TERMINAL_PKGS` 只放了 `com.termux`。
+  别的终端 app（同样用 `inputType=TYPE_NULL`）要自己加，否则看不到候选
+- **Termux 里胶囊位置固定**：它不支持 `requestCursorUpdates`（返回 false），
+  拿不到插入符坐标，胶囊只能落在 `screenH * 0.62`，不跟随光标
+- **调试日志未清**：`rime input`、`ctx preedit`、`drainCommit`、`opts`、
+  `commitRemote`、`onChar`、`fire a=` 等仍是 `Log.e`，
+  过滤 `adb logcat -s SplitKey`
 
 ---
 
-## 12. 第三方组件
+## 13. 第三方组件
 
 `libsplitkey_rime.so` 静态链接下面这些组件。全部是宽松许可（无 GPL），
 不要求 SplitKey 自身开源，但要求随二进制保留声明。

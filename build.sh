@@ -2,14 +2,25 @@
 # 编译 SplitKey APK（无 Gradle，直接用 aapt2 + javac + d8 + apksigner）
 set -e
 
-BT=$HOME/Project/android-buildtools/android-14
-PLATFORM=$HOME/Project/android-buildtools/android-36
-PROJ=$HOME/Project/splitkey
+# 路径全部可用环境变量覆盖，别人的目录结构不一样也能编
+PROJ=$(cd "$(dirname "$0")" && pwd)
+ANDROID_BUILDTOOLS=${ANDROID_BUILDTOOLS:-$HOME/Project/android-buildtools}
+BT=${BT:-$ANDROID_BUILDTOOLS/android-14}
+PLATFORM=${PLATFORM:-$ANDROID_BUILDTOOLS/android-36}
 OUT=$PROJ/build
 JAR=$PLATFORM/android.jar
 
-# librime 原生库（静态链接产物，见 ~/Project/splitkey-librime-build）
+# librime 原生库（静态链接产物，见 scripts/build-librime.sh）
 PROJ_LIBSPLITKEY_RIME_SO=${LIBSPLITKEY_RIME_SO:-$HOME/Project/splitkey-librime-build/out/libsplitkey_rime.so}
+
+for d in "$BT" "$PLATFORM"; do
+    [ -d "$d" ] || { echo "缺少 build-tools：$d"; echo "见 README 第 2 节「准备环境」"; exit 1; }
+done
+[ -f "$PROJ_LIBSPLITKEY_RIME_SO" ] || {
+    echo "缺少 librime 原生库：$PROJ_LIBSPLITKEY_RIME_SO"
+    echo "先跑 scripts/build-librime.sh，或用 LIBSPLITKEY_RIME_SO=... 指定"
+    exit 1
+}
 
 rm -rf "$OUT"
 mkdir -p "$OUT/compiled" "$OUT/classes" "$OUT/dex"
@@ -106,7 +117,7 @@ PY
 echo "=== zipalign + sign ==="
 "$BT/zipalign" -f 4 "$OUT/base.apk" "$OUT/aligned.apk"
 
-KS="$HOME/Project/splitkey/debug.keystore"
+KS=$PROJ/debug.keystore
 if [ ! -f "$KS" ]; then
     keytool -genkeypair -v -keystore "$KS" -alias androiddebugkey \
         -storepass android -keypass android -keyalg RSA -keysize 2048 \
