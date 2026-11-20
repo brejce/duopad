@@ -93,20 +93,25 @@ public final class KeyboardLayout {
             ),
 
             // 与字母层 a..l + ⏎ 同构：9 键 + ⏎(2.0)，右边缘对齐 ⌫
+            // 真键盘右侧那一列。不放 ( ) @ # % * —— 第一行 shift 副标签已经有了
+            // （3/#、5/%、8/*、9/(、0/)、2/@），重复占位是浪费。
             row(
-                    KeySpec.ch("-"), KeySpec.ch("/"), KeySpec.ch(":"),
-                    KeySpec.ch(";"), KeySpec.ch("("), KeySpec.ch(")"),
-                    KeySpec.ch("$"), KeySpec.ch("&"), KeySpec.ch("@"),
+                    KeySpec.ch("-", "_").shiftSub(), KeySpec.ch("=", "+").shiftSub(),
+                    KeySpec.ch("[", "{").shiftSub(), KeySpec.ch("]", "}").shiftSub(),
+                    KeySpec.ch("\\", "|").shiftSub(),
+                    KeySpec.ch(";", ":").shiftSub(),
+                    KeySpec.ch(",", "<").shiftSub(), KeySpec.ch(".", ">").shiftSub(),
+                    KeySpec.ch("/", "?").shiftSub(),
                     KeySpec.key("⏎", KeyEvent.KEYCODE_ENTER).w(2.0f)
             ),
 
             // 与字母层 ⇧ + 7 键 + 3 键 同构
             row(
                     KeySpec.mod("⇧", "shift").w(1.4f),
-                    KeySpec.ch("["), KeySpec.ch("]"), KeySpec.ch("{"),
-                    KeySpec.ch("}"), KeySpec.ch("#"), KeySpec.ch("%"),
-                    KeySpec.ch("*"), KeySpec.ch("+"), KeySpec.ch("="),
-                    KeySpec.ch("\"")
+                    KeySpec.ch("'", "\"").shiftSub(), KeySpec.ch("~", "`").shiftSub(),
+                    KeySpec.ch("¥"), KeySpec.ch("…"), KeySpec.ch("—"),
+                    KeySpec.ch("•"), KeySpec.ch("°"), KeySpec.ch("×"),
+                    KeySpec.ch("÷")
             ),
 
             row(
