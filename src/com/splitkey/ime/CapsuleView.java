@@ -38,6 +38,12 @@ public class CapsuleView extends View {
 
     private final List<String> words = new ArrayList<>();
     private String composing = "";
+
+    /** 当前高亮的候选（左右键移动）。-1 = 无 */
+    private int highlight = -1;
+    private final Paint hl = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** 候选前的序号（1..9），有候选时才画 */
+    private final Paint num = new Paint(Paint.ANTI_ALIAS_FLAG);
     private Listener listener;
 
     private final RectF box = new RectF();
@@ -73,6 +79,9 @@ public class CapsuleView extends View {
         fg.setTextAlign(Paint.Align.CENTER);
         hint.setTextSize(28f);
         hint.setTextAlign(Paint.Align.CENTER);
+        hl.setColor(0x40FFFFFF);
+        num.setTextSize(20f);
+        num.setTextAlign(Paint.Align.LEFT);
         setFocusable(false);
     }
 
@@ -87,12 +96,25 @@ public class CapsuleView extends View {
 
     public boolean isCollapsed() { return collapsed; }
 
+    public void setHighlight(int idx) {
+        if (highlight == idx) return;
+        highlight = idx;
+        invalidate();
+    }
+
     public void setCandidates(String composing, List<String> cands) {
         this.composing = composing == null ? "" : composing;
         words.clear();
         if (cands != null) words.addAll(cands);
         requestLayout();
         invalidate();
+    }
+
+    /** 候选占的宽度：正文 + 序号（1..9 才画） */
+    private float wordWidth(int i) {
+        float w = fg.measureText(words.get(i));
+        if (i < 9) w += num.measureText("1") + 6f;
+        return w;
     }
 
     public String composing() { return composing; }
@@ -106,8 +128,8 @@ public class CapsuleView extends View {
         }
 
         int width = 0;
-        for (String w : words) {
-            width += (int) (fg.measureText(w) + PAD_H * 2 + GAP);
+        for (int i = 0; i < words.size(); i++) {
+            width += (int) (wordWidth(i) + PAD_H * 2 + GAP);
         }
         if (!composing.isEmpty()) width += (int) (hint.measureText(composing) + PAD_H * 2);
         if (words.isEmpty()) width = (int) (PAD_H * 2 + 40);
@@ -149,12 +171,30 @@ public class CapsuleView extends View {
             return;
         }
 
-        fg.setColor(0xFFEDEDED);
-        for (String word : words) {
-            float tw = fg.measureText(word);
+        for (int i = 0; i < words.size(); i++) {
+            String word = words.get(i);
+            float tw = wordWidth(i);
             RectF r = new RectF(x, 0, x + tw + PAD_H * 2, h);
             wordRects.add(r);
-            c.drawText(word, r.centerX(), h / 2f + fg.getTextSize() / 3f, fg);
+
+            // 高亮底：左右键移到这里
+            if (i == highlight) {
+                RectF hr = new RectF(r);
+                hr.inset(4, 6);
+                c.drawRoundRect(hr, (hr.height()) / 2f, (hr.height()) / 2f, hl);
+            }
+
+            float tx = x + PAD_H;
+            // 序号：1..9，超出不画（数字键只到 9）
+            if (i < 9) {
+                num.setColor(i == highlight ? 0xFFFFFFFF : 0xFF6A6A76);
+                c.drawText(String.valueOf(i + 1), tx, h / 2f + num.getTextSize() / 3f, num);
+                tx += num.measureText("1") + 6f;
+            }
+
+            fg.setColor(0xFFEDEDED);
+            c.drawText(word, tx + fg.measureText(word) / 2f,
+                    h / 2f + fg.getTextSize() / 3f, fg);
             x += tw + PAD_H * 2 + GAP;
         }
     }

@@ -428,6 +428,7 @@ public class KeyboardService extends Service
         // 而且失去焦点时引擎里可能还留着上次的组合，不挡就会飘在桌面上。
         boolean has = focused && !list.isEmpty();
         capsule.setCandidates(rime.composing(), list);
+        capsule.setHighlight(rime.highlighted());
         capsule.setCollapsed(!has);
         setCapsuleTouchable(has);
 

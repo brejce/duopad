@@ -22,6 +22,9 @@ public interface RimeEngine {
     /** 选择第 index 个候选，返回要上屏的文本；无效返回 null */
     String selectCandidate(int index);
 
+    /** 当前高亮的候选下标（左右键移动），无候选返回 -1 */
+    int highlighted();
+
     /** 清空组合状态 */
     void reset();
 
@@ -40,6 +43,7 @@ public interface RimeEngine {
         @Override public boolean handleKey(int keyCode) { return false; }
         @Override public String[] candidates() { return new String[0]; }
         @Override public String selectCandidate(int index) { return null; }
+        @Override public int highlighted() { return -1; }
         @Override public void reset() {}
         @Override public String composing() { return ""; }
         @Override public boolean asciiMode() { return true; }

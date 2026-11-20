@@ -69,6 +69,22 @@ public final class RimeEngineImpl implements RimeEngine {
         // 引擎不消费时返回 false，调用方再走直通。
         if (ch < 0x21 || ch > 0x7e) return false;
         try {
+            // 1..9 有候选时直选第 n 个，不插字面数字
+            if (ch >= '1' && ch <= '9') {
+                String composing = nz(RimeNative.composition(session));
+                if (!composing.isEmpty()) {
+                    refresh();
+                    int idx = ch - '1';
+                    if (idx < lastCandidates.length
+                            && RimeNative.selectCandidate(session, idx)) {
+                        RimeNative.commitComposition(session);
+                        drainCommit();
+                        refresh();
+                        return true;
+                    }
+                    return true;        // 有拼音但越界：吞掉，别打数字进拼音串
+                }
+            }
             boolean consumed = RimeNative.processKey(session, ch, 0);
             drainCommit();
             refresh();
@@ -113,9 +129,25 @@ public final class RimeEngineImpl implements RimeEngine {
                         refresh();
                         return true;
                     }
-                    RimeNative.selectCandidate(session, 0);
+                    // 提交「当前高亮」那个，不是永远第 0 个：
+                    // 左右键把高亮移开后，空格应该上屏选中的那个。
+                    int hl = RimeNative.highlighted(session);
+                    if (hl < 0 || hl >= lastCandidates.length) hl = 0;
+                    RimeNative.selectCandidate(session, hl);
                     RimeNative.commitComposition(session);   // 选中后必须 commit 才上屏
                     drainCommit();
+                    refresh();
+                    return true;
+
+                case KeyEvent.KEYCODE_DPAD_LEFT:
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    if (!hasComposition) return false;              // 无拼音时方向键归应用
+                    // Rime 默认 Stacked 布局：Left/Right 是翻页，
+                    // 前后候选是 Up/Down。这里想要「左右选候选」，所以映射过去。
+                    refresh();
+                    if (lastCandidates.length == 0) return true;
+                    RimeNative.processKey(session,
+                            keyCode == KeyEvent.KEYCODE_DPAD_LEFT ? 0xff52 : 0xff54, 0);
                     refresh();
                     return true;
 
@@ -138,6 +170,16 @@ public final class RimeEngineImpl implements RimeEngine {
     @Override
     public String[] candidates() {
         return lastCandidates;
+    }
+
+    @Override
+    public int highlighted() {
+        if (session == 0) return -1;
+        try {
+            return RimeNative.highlighted(session);
+        } catch (Throwable t) {
+            return -1;
+        }
     }
 
     @Override

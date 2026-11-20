@@ -180,6 +180,17 @@ Java_com_splitkey_ime_RimeNative_candidates(JNIEnv* env, jclass, jlong sid, jint
     return arr;
 }
 
+extern "C" JNIEXPORT jint JNICALL
+Java_com_splitkey_ime_RimeNative_highlighted(JNIEnv*, jclass, jlong sid) {
+    RimeApi* r = api();
+    if (!r || !sid) return -1;
+    RIME_STRUCT(RimeContext, ctx);
+    if (!r->get_context((RimeSessionId) sid, &ctx)) return -1;
+    int idx = ctx.menu.num_candidates > 0 ? ctx.menu.highlighted_candidate_index : -1;
+    r->free_context(&ctx);
+    return idx;
+}
+
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_splitkey_ime_RimeNative_selectCandidate(JNIEnv*, jclass, jlong sid, jint index) {
     RimeApi* r = api();

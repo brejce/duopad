@@ -55,6 +55,9 @@ final class RimeNative {
     /** 选第 index 个候选。返回 true = 成功（commit 要用 takeCommit 取） */
     static native boolean selectCandidate(long session, int index);
 
+    /** 当前高亮的候选下标（左右键移动），无候选返回 -1 */
+    static native int highlighted(long session);
+
     /**
      * 把当前组合提交上屏（select_candidate 只选中、不 commit，
      * 必须再调这个才能拿到文字）。
