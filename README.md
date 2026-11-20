@@ -316,3 +316,25 @@ injector/com/splitkey/
 - **`CursorView` 自绘光标仍在**：系统光标通了以后应该删掉，两个光标速度/曲线不同
 - **中文路径**：`Shuttle.commitRemote()` → 广播 → `HiddenIme.commitText()` 通了，但没接引擎
 - **`✕` 之后进程常驻**：没有"彻底退出"的入口
+
+---
+
+## 12. 第三方组件
+
+`libsplitkey_rime.so` 静态链接下面这些组件。全部是宽松许可（无 GPL），
+不要求 SplitKey 自身开源，但要求随二进制保留声明。
+
+| 组件 | 许可 |
+|---|---|
+| librime | BSD-3-Clause |
+| Boost | Boost 1.0 |
+| LevelDB | BSD-3-Clause |
+| yaml-cpp | MIT |
+| marisa-trie | BSD-2-Clause **或** LGPL-2.1-or-later（本项目取 BSD-2）|
+| OpenCC | Apache-2.0 |
+
+完整许可文本在 `licenses/`。发 APK 时把该目录一起发出去（或在 app 内提供
+「开源许可」页面）。
+
+**词库单独算**：`luna_pinyin` 等输入方案由 Rime 社区维护，许可与引擎不同，
+打包前需逐个确认。
