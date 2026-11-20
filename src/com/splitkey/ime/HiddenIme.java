@@ -21,6 +21,10 @@ public class HiddenIme extends InputMethodService {
 
     private static final String TAG = "SplitKey";
     public static final String ACTION_FOCUS = "com.splitkey.ime.FOCUS";
+
+    /** 用 inputType=0 但确实要候选的终端类 app */
+    private static final java.util.Set<String> TERMINAL_PKGS =
+            new java.util.HashSet<>(java.util.Arrays.asList("com.termux"));
     public static final String ACTION_QUERY = "com.splitkey.ime.QUERY_FOCUS";
     public static final String ACTION_CURSOR = "com.splitkey.ime.CURSOR";
 
@@ -192,8 +196,13 @@ public class HiddenIme extends InputMethodService {
         super.onStartInput(attribute, restarting);
         String pkg = attribute != null ? attribute.packageName : "?";
         Log.e(TAG, "onStartInput pkg=" + pkg + " type=" + (attribute != null ? attribute.inputType : -1));
-        // 只有真正可编辑的输入框才算焦点（过滤掉无输入类型的）
-        boolean editable = attribute != null && attribute.inputType != 0;
+        // inputType==0 (TYPE_NULL) 一般不是可编辑框，要过滤 —— 桌面
+        // (com.android.launcher3) 也发 type=0，放行会让候选在桌面乱弹。
+        // 但终端类 app 用 type=0 表示「走原始按键」，必须放过，否则
+        // Termux 里看不到候选。只对白名单开这个口子。
+        // shortcut: 白名单写死，遇到别的终端 app 再往里加
+        boolean editable = attribute != null
+                && (attribute.inputType != 0 || TERMINAL_PKGS.contains(attribute.packageName));
         focused = editable;
         sendFocus(editable);
         if (editable) requestCursor();
