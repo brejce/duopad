@@ -136,13 +136,21 @@ public class TouchpadView extends View {
 
     public TouchpadView(Context ctx) {
         super(ctx);
-        padPaint.setColor(0xFFC8C8C8);
-        wheelPaint.setColor(0xFFE3E3E3);
-        tickPaint.setColor(0xFF5A5A5A);
-        hintPaint.setColor(0xFF1A1A1A);
+        applyTheme(ctx);
         setFocusable(false);
         setFocusableInTouchMode(false);
         vibrator = (Vibrator) ctx.getSystemService(Context.VIBRATOR_SERVICE);
+    }
+
+    /** 换主题：板面/滚轮/刻度/箭头全部重取色 */
+    public void applyTheme(Context ctx) { applyTheme(Theme.colors(ctx)); }
+
+    public void applyTheme(Theme.Colors t) {
+        padPaint.setColor(t.pad);
+        wheelPaint.setColor(t.wheel);
+        tickPaint.setColor(t.sub);
+        hintPaint.setColor(t.text);
+        invalidate();
     }
 
     public void setLeftInset(float x) {

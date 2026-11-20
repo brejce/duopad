@@ -22,6 +22,21 @@
             </intent-filter>
         </activity>
 
+        <!-- 设置页 / 许可页。exported=false：只在应用内打开，
+             入口按钮由 UI 那边自己接 startActivity -->
+        <!-- DeviceDefault.NoActionBar：默认主题会画一条 ActionBar，
+             和状态栏文字重叠；页面自己画标题，不要系统那条 -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="设置"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+        <activity
+            android:name=".LicensesActivity"
+            android:exported="false"
+            android:label="开源许可"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
         <!-- 隐藏 IME：不显示键盘，只负责 commitText -->
         <service
             android:name=".HiddenIme"

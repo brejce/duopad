@@ -15,6 +15,13 @@ mkdir -p "$OUT/compiled" "$OUT/classes" "$OUT/dex"
 echo "=== aapt2 compile ==="
 "$BT/aapt2" compile --dir "$PROJ/res" -o "$OUT/compiled/res.zip"
 
+# 1.5 licenses/ 是唯一来源，同步进 assets/ 供 aapt2 -A 打包
+#     （aapt2 -A 把目录内容映射到 APK 的 assets/ 根，所以必须放在 assets/licenses/）
+echo "=== sync licenses ==="
+rm -rf "$PROJ/assets/licenses"
+mkdir -p "$PROJ/assets"
+cp -r "$PROJ/licenses" "$PROJ/assets/licenses"
+
 # 2. 链接资源 + 生成 R.java
 echo "=== aapt2 link ==="
 "$BT/aapt2" link \
@@ -24,7 +31,8 @@ echo "=== aapt2 link ==="
     --java "$OUT/classes" \
     --min-sdk-version 30 \
     --target-sdk-version 36 \
-    "$OUT/compiled/res.zip"
+    "$OUT/compiled/res.zip" \
+    -A "$PROJ/assets"
 
 # 3. 编译 Java
 echo "=== javac ==="

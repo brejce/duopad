@@ -8,3 +8,6 @@ build/
 # signing keys
 *.keystore
 *.jks
+
+# generated from licenses/ by build.sh
+assets/

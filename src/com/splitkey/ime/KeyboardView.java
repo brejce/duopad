@@ -31,17 +31,13 @@ public class KeyboardView extends View {
     }
 
     // ---- 视觉参数 ----
-    private static final int C_BG      = 0xFFD4D4D4;
-    private static final int C_KEY     = 0xFFFFFFFF;
-    private static final int C_FUNC    = 0xFFE3E3E3;
-    private static final int C_DOWN    = 0xFFB8B8B8;
-    private static final int C_TEXT    = 0xFF1A1A1A;
-    private static final int C_SUB     = 0xFF5A5A5A;
+    /** 当前生效配色。applyTheme() 里从 Theme 拉，不再写死。 */
+    private Theme.Colors tc = Theme.LIGHT;
+    private int C_BG, C_KEY, C_FUNC, C_DOWN, C_TEXT, C_SUB,
+                C_SUB_FAINT, C_TEXT_FAINT, C_ARMED, C_LOCKED;
     /** 未生效字符：浅灰，只做「这个键还能打出这个」的提示 */
-    private static final int C_SUB_FAINT = 0xFFAFAFAF;
-    private static final int C_TEXT_FAINT = 0xFFB0B0B0;
-    private static final int C_ARMED   = 0xFF7FB3E8;   // 一次性：浅蓝
-    private static final int C_LOCKED  = 0xFF0F6CBD;   // 锁定：深蓝
+
+
 
     private static final float GAP    = 11f;   // 横/纵键间距（实测 d2-change.png）
     private static final float PAD    = 15f;   // 屏幕四周边距
@@ -92,6 +88,7 @@ public class KeyboardView extends View {
 
     public KeyboardView(Context ctx) {
         super(ctx);
+        applyTheme(Theme.colors(ctx));
         textPaint.setColor(C_TEXT);
         textPaint.setTextAlign(Paint.Align.CENTER);
         subPaint.setColor(C_SUB);
@@ -101,6 +98,19 @@ public class KeyboardView extends View {
     }
 
     public void setListener(Listener l) { this.listener = l; }
+
+    /** 换主题：重新取色并重绘。Settings 改完模式后调它。 */
+    public void applyTheme(Theme.Colors c) {
+        tc = c;
+        C_BG = c.bg; C_KEY = c.key; C_FUNC = c.func; C_DOWN = c.down;
+        C_TEXT = c.text; C_SUB = c.sub; C_SUB_FAINT = c.faint;
+        C_TEXT_FAINT = c.textFaint; C_ARMED = c.armed; C_LOCKED = c.locked;
+        textPaint.setColor(C_TEXT);
+        subPaint.setColor(C_SUB);
+        invalidate();
+    }
+
+    public void applyTheme(Context ctx) { applyTheme(Theme.colors(ctx)); }
 
     /** 切回字母层（键盘隐藏时调用） */
     public void reset() {

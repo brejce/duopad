@@ -86,6 +86,30 @@ public class KeyboardService extends Service
         }
     };
 
+    /** 设置页改了主题 -> 键盘重取配色（同进程 prefs 回调，不用广播） */
+    private final Theme.Listener themeListener = () -> {
+        if (kb == null) return;
+        kb.applyTheme(this);
+        if (touchpad != null) touchpad.applyTheme(this);
+        Log.e(TAG, "theme changed -> reapplied");
+    };
+
+    /**
+     * 系统日/夜切换。悬浮窗不在 Activity 的生命周期里，收不到
+     * onConfigurationChanged，只能挂 ComponentCallbacks 自己收。
+     * AUTO 模式下全靠它。
+     */
+    private final android.content.ComponentCallbacks2 uiModeCb =
+            new android.content.ComponentCallbacks2() {
+        @Override public void onConfigurationChanged(android.content.res.Configuration c) {
+            if (Theme.mode(KeyboardService.this) != Theme.Mode.AUTO) return;
+            Log.e(TAG, "uiMode night=" + Theme.isSystemDark(KeyboardService.this));
+            Theme.notifySystemModeChanged();
+        }
+        @Override public void onLowMemory() {}
+        @Override public void onTrimMemory(int level) {}
+    };
+
     private final BroadcastReceiver cursorRx = new BroadcastReceiver() {
         @Override
         public void onReceive(Context ctx, Intent it) {
@@ -169,6 +193,8 @@ public class KeyboardService extends Service
                 Context.RECEIVER_EXPORTED);
         registerReceiver(cursorRx, new IntentFilter(HiddenIme.ACTION_CURSOR),
                 Context.RECEIVER_EXPORTED);
+        Theme.addListener(this, themeListener);
+        getApplicationContext().registerComponentCallbacks(uiModeCb);
 
         Intent q = new Intent(HiddenIme.ACTION_QUERY);
         q.setPackage("com.splitkey.ime");
@@ -449,6 +475,9 @@ public class KeyboardService extends Service
     public void onDestroy() {
         try { unregisterReceiver(focusRx); } catch (Exception ignored) {}
         try { unregisterReceiver(cursorRx); } catch (Exception ignored) {}
+        Theme.removeListener(themeListener);
+        try { getApplicationContext().unregisterComponentCallbacks(uiModeCb); }
+        catch (Throwable ignored) {}
         // 不能用 isAttachedToWindow 判断：stopSelf 后它会先变 false，窗口就漏在屏幕上
         try { if (kbRoot != null) wm.removeView(kbRoot); } catch (Throwable ignored) {}
         try { if (cursorWm != null && cursor != null) cursorWm.removeView(cursor); } catch (Throwable ignored) {}
