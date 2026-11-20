@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.splitkey.ime">
+
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <application
+        android:allowBackup="false"
+        android:label="SplitKey">
+
+        <!-- 桌面图标 -->
+        <activity
+            android:name=".Launcher"
+            android:exported="true"
+            android:label="SplitKey"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- 隐藏 IME：不显示键盘，只负责 commitText -->
+        <service
+            android:name=".HiddenIme"
+            android:exported="true"
+            android:label="SplitKey"
+            android:permission="android.permission.BIND_INPUT_METHOD">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+
+        <!-- 下屏键盘：悬浮窗 Service -->
+        <service
+            android:name=".KeyboardService"
+            android:exported="true"
+            android:label="SplitKey Keyboard"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="keyboard" />
+        </service>
+
+    </application>
+</manifest>
