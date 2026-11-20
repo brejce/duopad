@@ -44,16 +44,14 @@ public class KeyboardService extends Service
     private KeyboardView kb;
     private TouchpadView touchpad;
     private android.widget.FrameLayout kbRoot;
-    private CursorView cursor;
-    private WindowManager cursorWm;
-    private WindowManager.LayoutParams cursorLp;
     private float curX = 960, curY = 540;
     private WindowManager wm;
     private CapsuleView capsule;
     private WindowManager topWm;
     private Context topCtx;
     private Shuttle shuttle;
-    private RimeEngine rime = RimeEngine.NULL;
+    /** 后台线程装配、主线程使用 */
+    private volatile RimeEngine rime = RimeEngine.NULL;
 
     private boolean focused = false;
     /** 手动锁定键盘（点小球切换） */
@@ -136,6 +134,11 @@ public class KeyboardService extends Service
 
         DisplayManager dm = getSystemService(DisplayManager.class);
 
+        // 上屏的候选胶囊和光标视图都在这里创建。
+        // 之前这两个调用丢了，导致 updateCapsule() 因 capsule==null 直接返回，
+        // 表现就是"中文没有候选框"。
+        addCapsule(dm);
+
         Display bottom = null;
         for (Display d : dm.getDisplays()) {
             if (d.getDisplayId() != Display.DEFAULT_DISPLAY) { bottom = d; break; }
@@ -208,24 +211,37 @@ public class KeyboardService extends Service
      * 任何一步失败都退回直通模式，不影响键盘其他功能。
      */
     private void initRime() {
+        // librime 首次初始化要编译词库，会阻塞数秒；放到后台线程，
+        // 否则主线程 ANR。完成后再切回主线程更新界面状态。
+        new Thread(() -> {
+            RimeEngine impl = createRime();
+            if (impl == null) return;
+            handler.post(() -> {
+                rime = impl;
+                if (kb != null) kb.setAsciiMode(rime.asciiMode());
+                updateCapsule();
+                Log.e(TAG, "rime: engine attached");
+            });
+        }, "rime-init").start();
+    }
+
+    /** 后台线程：装引擎。失败返回 null。 */
+    private RimeEngine createRime() {
         try {
             java.io.File shared = new java.io.File(getFilesDir(), "rime/shared");
             java.io.File user = new java.io.File(getFilesDir(), "rime/user");
             if (!user.exists() && !user.mkdirs()) {
                 Log.e(TAG, "rime: cannot create " + user);
-                return;
+                return null;
             }
             installAssets("rime", shared);
 
-            RimeEngine impl = RimeEngineImpl.create(
+            return RimeEngineImpl.create(
                     shared.getAbsolutePath(), user.getAbsolutePath(),
                     text -> shuttle.sendText(text));
-            if (impl != null) {
-                rime = impl;
-                Log.e(TAG, "rime: engine ready");
-            }
         } catch (Throwable t) {
             Log.e(TAG, "rime init failed: " + t);
+            return null;
         }
     }
 
@@ -289,11 +305,39 @@ public class KeyboardService extends Service
         }
     }
 
+    /**
+     * 让系统真正绑定 HiddenIme。
+     *
+     * 我们的键盘是悬浮窗，从不请求 IME 窗口，系统就不会创建 InputMethodService，
+     * 结果 getCurrentInputConnection() 永远为 null -> 中文 commitText 无处可去
+     * （日志特征：commitRemote direct=false）。
+     *
+     * HiddenIme 自己把窗口压成 0 高度，所以「显示」它不会挡住任何东西，
+     * 但这一步是必须的：只有被 showSoftInput 唤起，服务才会 onBind。
+     */
+    private void ensureImeStarted() {
+        try {
+            android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager)
+                            getSystemService(INPUT_METHOD_SERVICE);
+            if (imm == null) return;
+            boolean shown = imm.showSoftInput(kbRoot, 0);
+            Log.e(TAG, "ensureImeStarted showSoftInput=" + shown
+                    + " hiddenIme=" + HiddenIme.isAlive());
+        } catch (Throwable t) {
+            Log.e(TAG, "ensureImeStarted failed: " + t);
+        }
+    }
+
     private void applyFocus(boolean on) {
         focused = on;
+        // 上屏一来焦点就确认 IME 绑定还在：重装/重启后绑定会丢，
+        // 丢了中文就 commit 不出去。有实例时 ensure() 是空操作，不会 fork。
+        if (on) ImeBinder.ensure(this);
         // 只开不关：焦点来了就显示，焦点走了不隐藏（否则触摸板一起消失，就没法再操作）。
         // 隐藏只由 ✕ 触发。上屏没焦点时往哪里输入是系统的事，不是键盘该操心的。
         if (on) toggleKeyboard(true);
+        else rime.reset();          // 丢焦点就把残留拼音丢掉，不要在桌面上飘候选
         updateCapsule();
     }
 
@@ -308,6 +352,8 @@ public class KeyboardService extends Service
             } else if (show && !attached) {
                 wm.addView(kbRoot, kbParams());
                 Log.e(TAG, "keyboard shown");
+                // 键盘一露头就要确认上屏 IME 在跑，否则中文提交无处可去
+                ensureImeStarted();
             }
         } catch (Throwable t) {
             Log.e(TAG, "keyboard toggle failed: " + t);
@@ -356,33 +402,6 @@ public class KeyboardService extends Service
         }
     }
 
-    /** 上屏光标（系统没启用鼠标光标，自己画一个） */
-    private void addCursor(DisplayManager dm) {
-        Display top = dm.getDisplay(Display.DEFAULT_DISPLAY);
-        Context ctx = top != null ? createDisplayContext(top) : this;
-        cursorWm = (WindowManager) ctx.getSystemService(WINDOW_SERVICE);
-        cursor = new CursorView(ctx);
-
-        cursorLp = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT);
-        cursorLp.gravity = Gravity.TOP | Gravity.START;
-        cursorLp.x = 960;
-        cursorLp.y = 540;
-
-        try {
-            cursorWm.addView(cursor, cursorLp);
-            Log.e(TAG, "cursor added");
-        } catch (Throwable t) {
-            Log.e(TAG, "cursor failed: " + t);
-        }
-    }
-
     /** 移动残差：整数化会丢掉不足 1px 的位移，必须留到下次累加，否则慢速移动会「粘住」 */
     private float moveAccX, moveAccY;
 
@@ -405,7 +424,9 @@ public class KeyboardService extends Service
         List<String> list = new ArrayList<>();
         if (cs != null) for (String c : cs) list.add(c);
 
-        boolean has = !list.isEmpty();
+        // 没焦点就别显示：桌面上、别的 app 里都不该冒候选。
+        // 而且失去焦点时引擎里可能还留着上次的组合，不挡就会飘在桌面上。
+        boolean has = focused && !list.isEmpty();
         capsule.setCandidates(rime.composing(), list);
         capsule.setCollapsed(!has);
         setCapsuleTouchable(has);
@@ -480,7 +501,6 @@ public class KeyboardService extends Service
         catch (Throwable ignored) {}
         // 不能用 isAttachedToWindow 判断：stopSelf 后它会先变 false，窗口就漏在屏幕上
         try { if (kbRoot != null) wm.removeView(kbRoot); } catch (Throwable ignored) {}
-        try { if (cursorWm != null && cursor != null) cursorWm.removeView(cursor); } catch (Throwable ignored) {}
         try { if (topWm != null && capsule != null) topWm.removeView(capsule); } catch (Throwable ignored) {}
         if (rime instanceof RimeEngineImpl) ((RimeEngineImpl) rime).destroy();
         super.onDestroy();
@@ -587,8 +607,25 @@ public class KeyboardService extends Service
     public void onChar(String ch) {
         Log.e(TAG, "onChar '" + ch + "'");
         boolean consumed = false;
-        if (ch.length() == 1) consumed = rime.input(ch.charAt(0));
+        if (ch.length() == 1) {
+            char c = ch.charAt(0);
+            // 空格：有拼音时必须当作「选首候选」，不能直接打空格。
+            // 它声明成 char: 走的是 onChar，绕过了 onKey 里的 handleKey。
+            if (c == ' ' && rime.handleKey(android.view.KeyEvent.KEYCODE_SPACE)) {
+                updateCapsule();
+                return;
+            }
+            consumed = rime.input(c);
+        }
         if (!consumed) shuttle.sendText(ch);
+        updateCapsule();
+    }
+
+    @Override
+    public void onToggleIme() {
+        boolean ascii = rime.toggleAsciiMode();
+        Log.e(TAG, "toggle ime -> ascii=" + ascii);
+        kb.setAsciiMode(ascii);
         updateCapsule();
     }
 

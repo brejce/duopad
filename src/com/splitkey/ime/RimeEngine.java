@@ -28,6 +28,12 @@ public interface RimeEngine {
     /** 当前组合中的拼音串（用于下屏预编辑显示） */
     String composing();
 
+    /** 是否英文直通（中文引擎才有意义；空实现恒为 true） */
+    boolean asciiMode();
+
+    /** 切换中英，返回切换后的状态（true=英文） */
+    boolean toggleAsciiMode();
+
     /** 空实现：所有按键直通，无候选 */
     RimeEngine NULL = new RimeEngine() {
         @Override public boolean input(char ch) { return false; }
@@ -36,5 +42,7 @@ public interface RimeEngine {
         @Override public String selectCandidate(int index) { return null; }
         @Override public void reset() {}
         @Override public String composing() { return ""; }
+        @Override public boolean asciiMode() { return true; }
+        @Override public boolean toggleAsciiMode() { return true; }
     };
 }

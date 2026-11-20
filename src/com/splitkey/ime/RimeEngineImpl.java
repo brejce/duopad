@@ -62,12 +62,22 @@ public final class RimeEngineImpl implements RimeEngine {
     @Override
     public boolean input(char ch) {
         if (session == 0) return false;
-        // 只处理字母和分隔符；数字标点直通，避免抢走键盘的常规输入
-        if (!(ch >= 'a' && ch <= 'z') && ch != '\'') return false;
+        // 可见 ASCII 全部交给引擎：
+        //   字母 -> speller 组词
+        //   标点 -> punctuator（中文模式下出「，。」，而不是直通的「,.」）
+        //   数字 -> selector（有候选时选词）
+        // 引擎不消费时返回 false，调用方再走直通。
+        if (ch < 0x21 || ch > 0x7e) return false;
         try {
             boolean consumed = RimeNative.processKey(session, ch, 0);
             drainCommit();
             refresh();
+            Log.e(TAG, "rime input '" + ch + "' schema=" + RimeNative.schemaId(session)
+                    + " consumed=" + consumed
+                    + " ascii=" + asciiMode()
+                    + " comp='" + lastComposition + "'"
+                    + " cand=" + lastCandidates.length
+                    + (lastCandidates.length > 0 ? " [" + lastCandidates[0] + "]" : ""));
             return consumed;
         } catch (Throwable t) {
             Log.e(TAG, "input failed: " + t);
@@ -79,24 +89,39 @@ public final class RimeEngineImpl implements RimeEngine {
     public boolean handleKey(int keyCode) {
         if (session == 0) return false;
         try {
+            // 别用 lastComposition 判断：它是上一次 refresh 的缓存，可能滞后。
+            // 直接问引擎当前是否在组词。
+            String composing = nz(RimeNative.composition(session));
+            boolean hasComposition = !composing.isEmpty();
             switch (keyCode) {
                 case KeyEvent.KEYCODE_DEL:
-                    if (lastComposition.isEmpty()) return false;   // 无拼音时空格删直通
-                    RimeNative.processKey(session, 0xff08, 0);     // XK_BackSpace
+                    if (!hasComposition) return false;              // 无拼音时退格直通
+                    RimeNative.processKey(session, 0xff08, 0);      // XK_BackSpace
                     drainCommit();
                     refresh();
                     return true;
 
                 case KeyEvent.KEYCODE_SPACE:
-                    if (lastComposition.isEmpty()) return false;
-                    RimeNative.processKey(session, 0x20, 0);       // XK_space = 选首候选
+                    if (!hasComposition) return false;              // 不打拼音时空格照常插入
+                    // 不用 process_key(0x20)：空格是 0x20，Editor 的
+                    // char_handler 判定是 ch > 0x20，空格走不进去；
+                    // key_binder 那条路在无候选时会静默取消，结果就是
+                    // 「按了没反应，点候选才上屏」。直接选首候选。
+                    refresh();
+                    if (lastCandidates.length == 0) {
+                        RimeNative.clearComposition(session);
+                        refresh();
+                        return true;
+                    }
+                    RimeNative.selectCandidate(session, 0);
+                    RimeNative.commitComposition(session);   // 选中后必须 commit 才上屏
                     drainCommit();
                     refresh();
                     return true;
 
                 case KeyEvent.KEYCODE_ENTER:
                 case KeyEvent.KEYCODE_ESCAPE:
-                    if (lastComposition.isEmpty()) return false;
+                    if (!hasComposition) return false;
                     RimeNative.clearComposition(session);
                     refresh();
                     return true;
@@ -121,6 +146,7 @@ public final class RimeEngineImpl implements RimeEngine {
         if (index < 0 || index >= lastCandidates.length) return null;
         try {
             if (!RimeNative.selectCandidate(session, index)) return null;
+            RimeNative.commitComposition(session);       // 选中后必须 commit 才上屏
             String out = drainCommit();
             refresh();
             return out;
@@ -144,10 +170,34 @@ public final class RimeEngineImpl implements RimeEngine {
         return lastComposition;
     }
 
+    @Override
+    public boolean asciiMode() {
+        if (session == 0) return true;
+        try { return RimeNative.isAsciiMode(session); }
+        catch (Throwable t) { return true; }
+    }
+
+    @Override
+    public boolean toggleAsciiMode() {
+        if (session == 0) return true;
+        try {
+            boolean now = RimeNative.isAsciiMode(session);
+            RimeNative.setAsciiMode(session, !now);
+            // 切英文时清掉未完成的拼音，避免残留候选
+            if (!now) RimeNative.clearComposition(session);
+            refresh();
+            return !now;
+        } catch (Throwable t) {
+            Log.e(TAG, "toggleAsciiMode failed: " + t);
+            return true;
+        }
+    }
+
     /** 取出引擎产生的上屏文本并交给 Sink；返回该文本 */
     private String drainCommit() {
         if (session == 0) return null;
         String text = RimeNative.takeCommit(session);
+        Log.e(TAG, "drainCommit text='" + text + "' sink=" + (sink != null));
         if (text != null && !text.isEmpty() && sink != null) sink.commit(text);
         return text;
     }

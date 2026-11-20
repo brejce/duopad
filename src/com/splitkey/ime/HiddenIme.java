@@ -153,9 +153,27 @@ public class HiddenIme extends InputMethodService {
         sendBroadcast(it);
     }
 
+    /**
+     * 进程内直连：KeyboardService 和 HiddenIme 在同一个进程里，
+     * 中间隔一层广播要走 system_server 队列，实测有可感知延迟。
+     * 这里挂一个静态实例，Shuttle 直接调用，不走广播。
+     */
+    private static volatile HiddenIme instance;
+
+    static boolean isAlive() { return instance != null; }
+
+    /** 进程内提交。没有活动实例时返回 false，调用方自行退回广播。 */
+    static boolean commitInProcess(String text) {
+        HiddenIme ime = instance;
+        if (ime == null) return false;
+        ime.commit(text);
+        return true;
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
+        instance = this;
         IntentFilter f = new IntentFilter(Shuttle.ACTION_CMD);
         f.addAction(ACTION_QUERY);
         registerReceiver(rx, f, Context.RECEIVER_EXPORTED);
@@ -164,6 +182,7 @@ public class HiddenIme extends InputMethodService {
 
     @Override
     public void onDestroy() {
+        if (instance == this) instance = null;
         try { unregisterReceiver(rx); } catch (Exception ignored) {}
         super.onDestroy();
     }

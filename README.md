@@ -289,7 +289,6 @@ src/com/splitkey/ime/
   CapsuleView.java      候选胶囊（折叠态纯透明）                       (198 行)
   Shuttle.java          输出分发：ASCII→FIFO，Unicode→广播             (144 行)
   KeyboardLayout.java   布局纯数据（改布局只动这里）                   (111 行)
-  CursorView.java       自绘光标（系统光标通了之后可删）                 (55 行)
   KeySpec.java          键声明                                        (54 行)
   RimeEngine.java       输入法引擎占位（现在返回 NULL）                  (40 行)
   Launcher.java         桌面图标：拉起服务后立刻退出                     (32 行)
@@ -313,7 +312,6 @@ injector/com/splitkey/
 ## 11. 已知未完成
 
 - **Rime 未接入**：`RimeEngine.NULL`，候选词是假的
-- **`CursorView` 自绘光标仍在**：系统光标通了以后应该删掉，两个光标速度/曲线不同
 - **中文路径**：`Shuttle.commitRemote()` → 广播 → `HiddenIme.commitText()` 通了，但没接引擎
 - **`✕` 之后进程常驻**：没有"彻底退出"的入口
 

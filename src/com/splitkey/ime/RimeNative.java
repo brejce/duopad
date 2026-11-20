@@ -55,6 +55,20 @@ final class RimeNative {
     /** 选第 index 个候选。返回 true = 成功（commit 要用 takeCommit 取） */
     static native boolean selectCandidate(long session, int index);
 
+    /**
+     * 把当前组合提交上屏（select_candidate 只选中、不 commit，
+     * 必须再调这个才能拿到文字）。
+     */
+    static native boolean commitComposition(long session);
+
     /** 清空组合状态 */
     static native void clearComposition(long session);
+
+    /** 中英状态：true = 英文直通，false = 中文。 */
+    static native void setAsciiMode(long session, boolean ascii);
+
+    static native boolean isAsciiMode(long session);
+
+    /** 当前方案 id（如 luna_pinyin）。空串 = 没有选中方案。 */
+    static native String schemaId(long session);
 }

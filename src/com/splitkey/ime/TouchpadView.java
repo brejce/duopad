@@ -81,11 +81,19 @@ public class TouchpadView extends View {
     private static final float MARGIN = 9f;
     private static final float PAD_RIGHT = 1113f;
 
+    /** 左上角放大/缩小按钮：正方形区域与中心（尚未接功能） */
+    private static final float ZOOM_SIZE = 52f;
+    private static final float ZOOM_PAD  = 14f;   // 距触摸板左上角的内边距
+
     private final Paint padPaint   = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint wheelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint tickPaint  = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint hintPaint  = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path arrow = new Path();
+    private final Paint zoomBg    = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint zoomPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** 按钮底色：取滚轮条色再压暗一点，两套主题下都看得见 */
+    private int zoomBgColor;
 
     /** 触摸板左边界（由 Service 按键盘布局设定） */
     private float leftInset = 165f;
@@ -150,6 +158,8 @@ public class TouchpadView extends View {
         wheelPaint.setColor(t.wheel);
         tickPaint.setColor(t.sub);
         hintPaint.setColor(t.text);
+        zoomBgColor = t.func;
+        zoomPaint.setStrokeCap(Paint.Cap.ROUND);
         invalidate();
     }
 
@@ -209,6 +219,37 @@ public class TouchpadView extends View {
         for (float y = h * 0.30f; y < h * 0.66f; y += 24) {
             c.drawRect(cx - 15, y, cx + 15, y + 3, tickPaint);
         }
+
+        drawZoomIcon(c);
+    }
+
+    /**
+     * 左上角的放大/缩小按钮：两条对角箭头（↖ ↘ 变体）。
+     * 现在只是视觉占位，onTouchEvent 里还没接。
+     */
+    private void drawZoomIcon(Canvas c) {
+        float x0 = leftInset + ZOOM_PAD, y0 = MARGIN + ZOOM_PAD;
+        float x1 = x0 + ZOOM_SIZE,       y1 = y0 + ZOOM_SIZE;
+
+        // 底：很淡的圆角块，让它看得出是可点的按钮
+        zoomBg.setColor(zoomBgColor);
+        c.drawRoundRect(new android.graphics.RectF(x0, y0, x1, y1), 8, 8, zoomBg);
+
+        // 图标：左上角朝内箭头 + 右下角朝外箭头，表示缩放
+        zoomPaint.setColor(hintPaint.getColor());
+        zoomPaint.setStrokeWidth(3f);
+        zoomPaint.setStrokeCap(Paint.Cap.ROUND);
+        float cx = (x0 + x1) / 2f, cy = (y0 + y1) / 2f;
+
+        // 左上：↘ 向右下的箭头（缩小）
+        c.drawLine(cx - 11, cy - 11, cx - 3, cy - 3, zoomPaint);
+        c.drawLine(cx - 11, cy - 11, cx - 11, cy - 5, zoomPaint);
+        c.drawLine(cx - 11, cy - 11, cx - 5, cy - 11, zoomPaint);
+
+        // 右下：↖ 向左上的箭头（放大）
+        c.drawLine(cx + 11, cy + 11, cx + 3, cy + 3, zoomPaint);
+        c.drawLine(cx + 11, cy + 11, cx + 11, cy + 5, zoomPaint);
+        c.drawLine(cx + 11, cy + 11, cx + 5, cy + 11, zoomPaint);
     }
 
     @Override

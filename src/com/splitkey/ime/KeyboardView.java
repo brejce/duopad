@@ -28,6 +28,8 @@ public class KeyboardView extends View {
         void onKeyWithMeta(int keyCode, int metaState);
         /** ✕：收起键盘 */
         void onExit();
+        /** Ctrl/Alt + 空格：切中英（在本地处理，绝不注入系统热键） */
+        void onToggleIme();
     }
 
     // ---- 视觉参数 ----
@@ -74,8 +76,56 @@ public class KeyboardView extends View {
         }
     };
 
+    /**
+     * 长按连发：⌫ / 空格 / 方向键这类「按住就想一直动」的键。
+     * 延时与长按数字一致（400ms），之后每 55ms 一次。
+     * 只连发这一类键；字母、标点按住不重复（真键盘也不重复）。
+     */
+    private static final long REPEAT_DELAY = 400;
+    private static final long REPEAT_INTERVAL = 55;
+    private RKey repeatKey;
+    private final Runnable repeatRun = new Runnable() {
+        @Override public void run() {
+            if (repeatKey == null || listener == null) return;
+            longFired = true;               // 抬起时不再补一次
+            emit(repeatKey);
+            lpHandler.postDelayed(this, REPEAT_INTERVAL);
+        }
+    };
+
+    /** 这个键按住要不要连发 */
+    private static boolean repeatable(KeySpec spec) {
+        if ("char: ".equals(spec.action)) return true;       // 空格
+        if (!spec.action.startsWith("key:")) return false;
+        int code;
+        try {
+            code = Integer.parseInt(spec.action.substring(4));
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        return code == KeyEvent.KEYCODE_DEL
+                || code == KeyEvent.KEYCODE_FORWARD_DEL
+                || code == KeyEvent.KEYCODE_DPAD_LEFT
+                || code == KeyEvent.KEYCODE_DPAD_RIGHT
+                || code == KeyEvent.KEYCODE_DPAD_UP
+                || code == KeyEvent.KEYCODE_DPAD_DOWN;
+    }
+
+    /** 连发专用：只出输入，不动修饰键状态、不切层 */
+    private void emit(RKey k) {
+        String a = k.spec.action;
+        if (a.startsWith("key:")) {
+            int code = Integer.parseInt(a.substring(4));
+            if (code > 0) listener.onKey(code);
+        } else if (a.startsWith("char:")) {
+            listener.onChar(a.substring(5));
+        }
+    }
+
     // 修饰键状态：0=off 1=armed(一次性) 2=locked
     private int shiftState, ctrlState, altState;
+    /** true = 英文直通。空格键上显示当前状态。 */
+    private boolean asciiMode = true;
 
     /** 双击检测：只有快速连点两次才锁定 */
     private static final long DOUBLE_CLICK_MS = 320;
@@ -98,6 +148,13 @@ public class KeyboardView extends View {
     }
 
     public void setListener(Listener l) { this.listener = l; }
+
+    /** 中英状态变化，空格键文案跟着变。 */
+    public void setAsciiMode(boolean ascii) {
+        if (asciiMode == ascii) return;
+        asciiMode = ascii;
+        invalidate();
+    }
 
     /** 换主题：重新取色并重绘。Settings 改完模式后调它。 */
     public void applyTheme(Theme.Colors c) {
@@ -273,10 +330,17 @@ public class KeyboardView extends View {
                 float hw = k.r.width() * 0.12f;
                 c.drawRoundRect(new RectF(k.r.centerX() - hw, k.r.centerY() - 3,
                         k.r.centerX() + hw, k.r.centerY() + 3), 3, 3, shadowPaint);
+                // 中英状态：空格左侧印出来，不用猜现在打的是哪种
+                subPaint.setColor(white ? 0xAAFFFFFF : C_SUB);
+                subPaint.setTextAlign(Paint.Align.LEFT);
+                c.drawText(asciiMode ? "EN" : "中", k.r.left + 18,
+                        k.r.centerY() + subPaint.getTextSize() * 0.36f, subPaint);
+                subPaint.setTextAlign(Paint.Align.CENTER);
             } else if (k.spec.sub != null) {
                 boolean up = upper();
                 String lbl = k.spec.label;
                 if (Character.isLetter(lbl.charAt(0))) lbl = lbl.toUpperCase();   // 字母键一律印大写
+                else lbl = punctLabel(lbl);
 
                 if (k.spec.subShift) {
                     // 副标签 = shift 字符，随 shift 变色（真键盘：! 和 1 印在同一键）
@@ -301,7 +365,7 @@ public class KeyboardView extends View {
                 }
             } else {
                 String lbl = shiftLabel(k.spec.label);
-                if (!Character.isLetter(lbl.charAt(0))) lbl = k.spec.label;
+                if (!Character.isLetter(lbl.charAt(0))) lbl = punctLabel(k.spec.label);
                 c.drawText(lbl, k.r.centerX(), k.r.centerY() + textPaint.getTextSize() * 0.34f, textPaint);
             }
         }
@@ -318,10 +382,14 @@ public class KeyboardView extends View {
                 if (pressed != null && pressed.spec.sub != null) {
                     lpHandler.postDelayed(longPress, 400);
                 }
+                repeatKey = (pressed != null && repeatable(pressed.spec)) ? pressed : null;
+                if (repeatKey != null) lpHandler.postDelayed(repeatRun, REPEAT_DELAY);
                 invalidate();
                 return true;
             case MotionEvent.ACTION_UP:
                 lpHandler.removeCallbacks(longPress);
+                lpHandler.removeCallbacks(repeatRun);
+                repeatKey = null;
                 RKey k = hit(x, y);
                 if (!longFired && k != null && k == pressed) fire(k);
                 pressed = null;
@@ -330,6 +398,8 @@ public class KeyboardView extends View {
                 return true;
             case MotionEvent.ACTION_CANCEL:
                 lpHandler.removeCallbacks(longPress);
+                lpHandler.removeCallbacks(repeatRun);
+                repeatKey = null;
                 pressed = null;
                 longFired = false;
                 invalidate();
@@ -398,6 +468,15 @@ public class KeyboardView extends View {
 
         int meta = 0;
         Log.e("SplitKey", "fire a=" + a + " shift=" + shiftState + " ctrl=" + ctrlState + " alt=" + altState);
+
+        // 修饰键 + 空格 = 切中英。必须在本地吃掉：
+        // Ctrl+Space 是 Android 的系统输入法切换热键，一旦注入就会被
+        // PhoneWindowManager 拦下并弹出别的 IME。我们根本不要它出门。
+        if ("char: ".equals(a) && (ctrlState > 0 || altState > 0)) {
+            resetModifiers();
+            if (listener != null) listener.onToggleIme();
+            return;
+        }
         if (upper()) meta |= KeyEvent.META_SHIFT_ON;
         if (ctrlState > 0)  meta |= KeyEvent.META_CTRL_ON;
         if (altState > 0)   meta |= KeyEvent.META_ALT_ON;
@@ -459,6 +538,20 @@ public class KeyboardView extends View {
      * 输入行为本来就是对的（走 META_SHIFT_ON 注入），这里只是让键面跟上，
      * 不然按了 ⇧ 键面还是 ', . 1'，只有打进输入框才看得出变成了 '< > !'。
      */
+    /**
+     * 键面标点：中文模式下画全角，和 Rime 实际吐的字对上。
+     * 只映射键盘上真有的这三个键；其余原样返回。
+     */
+    private String punctLabel(String s) {
+        if (asciiMode || s.length() != 1) return s;
+        switch (s.charAt(0)) {
+            case ',': return "，";
+            case '.': return "。";
+            case '/': return "、";
+            default:  return s;
+        }
+    }
+
     private static String shiftLabel(String s) {
         if (s == null || s.length() != 1) return s;
         char c = s.charAt(0);

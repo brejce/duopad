@@ -8,6 +8,9 @@ PROJ=$HOME/Project/splitkey
 OUT=$PROJ/build
 JAR=$PLATFORM/android.jar
 
+# librime 原生库（静态链接产物，见 ~/Project/splitkey-librime-build）
+PROJ_LIBSPLITKEY_RIME_SO=${LIBSPLITKEY_RIME_SO:-$HOME/Project/splitkey-librime-build/out/libsplitkey_rime.so}
+
 rm -rf "$OUT"
 mkdir -p "$OUT/compiled" "$OUT/classes" "$OUT/dex"
 
@@ -21,6 +24,36 @@ echo "=== sync licenses ==="
 rm -rf "$PROJ/assets/licenses"
 mkdir -p "$PROJ/assets"
 cp -r "$PROJ/licenses" "$PROJ/assets/licenses"
+
+# 1.6 Rime 词库：不进仓库，构建时从 RIME_DATA 同步
+#     默认用 librime 源码自带的 minimal 词库（luna_pinyin，够验证中文输入）
+echo "=== sync rime data ==="
+RIME_DATA=${RIME_DATA:-$HOME/Project/splitkey-librime-build/librime/data/minimal}
+if [ -d "$RIME_DATA" ]; then
+    rm -rf "$PROJ/assets/rime"
+    mkdir -p "$PROJ/assets/rime"
+    cp -r "$RIME_DATA"/* "$PROJ/assets/rime/"
+    echo "  rime data: $RIME_DATA"
+
+    # OpenCC 字典：简体转换（zh_simp）要靠它。librime 从
+    # <shared_data_dir>/opencc/ 找 t2s.json + *.ocd2，缺了就只能出繁体。
+    OPENCC_DATA=${OPENCC_DATA:-/usr/share/opencc}
+    if [ -d "$OPENCC_DATA" ]; then
+        mkdir -p "$PROJ/assets/rime/opencc"
+        cp "$OPENCC_DATA"/t2s.json "$OPENCC_DATA"/s2t.json "$PROJ/assets/rime/opencc/" 2>/dev/null
+        # 只带 t2s 链上需要的字典，别把整套搬进去
+        cp "$OPENCC_DATA"/CJK_Compatibility_Ideographs.ocd2 \
+           "$OPENCC_DATA"/TSPhrases.ocd2 \
+           "$OPENCC_DATA"/TSCharacters.ocd2 \
+           "$OPENCC_DATA"/TSCharactersExt.ocd2 \
+           "$PROJ/assets/rime/opencc/" 2>/dev/null
+        echo "  opencc: $(ls "$PROJ/assets/rime/opencc" | wc -l) files"
+    else
+        echo "  !!! OPENCC_DATA 不存在（简体转换不可用）"
+    fi
+else
+    echo "  !!! RIME_DATA 不存在：$RIME_DATA（中文输入会不可用）"
+fi
 
 # 2. 链接资源 + 生成 R.java
 echo "=== aapt2 link ==="
@@ -55,12 +88,18 @@ find "$OUT/classes" -name '*.class' > "$OUT/classes.txt"
 
 # 5. 打包
 echo "=== package ==="
-python3 - "$OUT/base.apk" "$OUT/dex/classes.dex" <<'PY'
-import sys, zipfile
-apk, dex = sys.argv[1], sys.argv[2]
+SO="$PROJ_LIBSPLITKEY_RIME_SO"
+python3 - "$OUT/base.apk" "$OUT/dex/classes.dex" "$SO" <<'PY'
+import os, sys, zipfile
+apk, dex, so = sys.argv[1], sys.argv[2], sys.argv[3]
 with zipfile.ZipFile(apk, 'a', zipfile.ZIP_DEFLATED) as z:
     z.write(dex, 'classes.dex')
-print("classes.dex added")
+    if so and os.path.isfile(so):
+        # 原生库必须不压缩，否则安装后 mmap 失败
+        z.write(so, 'lib/arm64-v8a/libsplitkey_rime.so', zipfile.ZIP_STORED)
+        print("native lib added")
+    else:
+        print("native lib MISSING: " + str(so))
 PY
 
 # 6. 对齐 + 签名

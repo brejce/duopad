@@ -16,11 +16,8 @@ public class Launcher extends Activity {
             startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + getPackageName())));
         } else {
-            // 重装 APK 会把默认输入法重置回 Gboard，这里用 root 改回来
-            try {
-                Runtime.getRuntime().exec(new String[]{"su", "-c",
-                        "ime set com.splitkey.ime/.HiddenIme"});
-            } catch (Throwable ignored) {}
+            // 重装 APK 会把绑定丢掉，启动时重新 set 一次把 HiddenIme 拉起来
+            ImeBinder.force(this);
 
             Intent i = new Intent(this, KeyboardService.class);
             i.putExtra("pin", true);      // 手动启动 = 强制显示键盘

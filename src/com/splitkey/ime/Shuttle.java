@@ -93,6 +93,11 @@ public class Shuttle implements OutputChannel {
     }
 
     private void commitRemote(String text) {
+        // 同进程直连，省掉一次广播往返（这是中文上屏延迟的来源）。
+        boolean direct = HiddenIme.commitInProcess(text);
+        Log.e(TAG, "commitRemote text='" + text + "' direct=" + direct);
+        if (direct) return;
+
         Intent it = new Intent(ACTION_CMD);
         it.setPackage("com.splitkey.ime");
         it.putExtra("op", OP_COMMIT);
