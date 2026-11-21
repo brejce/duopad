@@ -66,6 +66,19 @@ public class KeyboardService extends Service
         touchpadFull = false;
         toggleKeyboard(false);
     };
+    /**
+     * 兜底轮询：默认输入法可能在任意时刻被系统/别的 App 改掉
+     * （Gboard 自拉起、ime set 被抢）。只靠焦点变化去查会漏掉，
+     * 表现就是「键盘用着用着就不能输入中文，得手动重开」。
+     * 只读 SharedPreferences，开销可以忽略。
+     */
+    private final Runnable imeWatch = new Runnable() {
+        @Override public void run() {
+            ImeBinder.ensure(KeyboardService.this);
+            handler.postDelayed(this, 5000);
+        }
+    };
+
     /** 供设置页触发亮度预览（同进程直连，不走广播） */
     static KeyboardService current;
     private android.widget.FrameLayout kbRoot;
@@ -225,6 +238,7 @@ public class KeyboardService extends Service
                 Context.RECEIVER_EXPORTED);
         Theme.addListener(this, themeListener);
         Idle.addListener(this, brightListener);
+        handler.postDelayed(imeWatch, 5000);
         getApplicationContext().registerComponentCallbacks(uiModeCb);
 
         Intent q = new Intent(HiddenIme.ACTION_QUERY);
@@ -606,6 +620,7 @@ public class KeyboardService extends Service
         try { unregisterReceiver(cursorRx); } catch (Exception ignored) {}
         Theme.removeListener(themeListener);
         Idle.removeListener(brightListener);
+        handler.removeCallbacks(imeWatch);
         try { getApplicationContext().unregisterComponentCallbacks(uiModeCb); }
         catch (Throwable ignored) {}
         // 不能用 isAttachedToWindow 判断：stopSelf 后它会先变 false，窗口就漏在屏幕上
