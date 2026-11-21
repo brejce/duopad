@@ -263,7 +263,95 @@ adb shell "su -c 'cat /sys/class/input/eventN/device/capabilities/rel'"
 
 ---
 
-## 9. 焦点与生命周期（关键设计）
+## 9. 输入是怎么注入的（以及游戏兼容性）
+
+两条通道**性质完全不同**，别混着理解。
+
+### 触摸板 = 真正的鼠标设备
+
+`device/uimouse.c` 用 `/dev/uinput` 注册了一台 **BUS_USB 物理鼠标**：
+
+```c
+usetup.id.bustype = BUS_USB;
+usetup.id.vendor  = 0x1234;
+usetup.id.product = 0x5678;
+strcpy(usetup.name, "SplitKey Virtual Mouse");
+```
+
+系统的设备列表里能看到它：
+
+```
+36: SplitKey Virtual Mouse
+    Classes: CURSOR | EXTERNAL
+    Identifier: bus=0x0003, vendor=0x1234, product=0x5678
+    Capabilities: BTN_LEFT BTN_RIGHT BTN_MIDDLE REL_X REL_Y REL_WHEEL REL_HWHEEL
+```
+
+所以它**就是鼠标**，不是触摸事件的伪装。这也是唯一能画出系统光标的路子：
+自绘箭头追不上系统光标的速度曲线（早期版本做过，已删）。
+
+### 键盘 = 逐次事件注入，不是设备
+
+键盘走 root 的 `input` 命令（`device/sk_daemon.sh` 从 FIFO 读命令）：
+
+```sh
+TXT:*)   input text "${line#TXT:}" ;;        # ASCII 文本
+KEY:*)   input keyevent "${line#KEY:}" ;;    # 单键
+COMBO:*) input keycombination $args ;;       # 组合键（Ctrl/Alt/Shift + 键）
+```
+
+`input` 通过 `INJECT_INPUT_EVENT` 走 `InputManager.injectInputEvent()`，
+**不注册任何输入设备**。`dumpsys input` 的 12 个设备里没有我们创建的键盘。
+
+| | 触摸板 | 键盘 |
+|---|---|---|
+| 通道 | `/dev/uinput` 注册设备 | `input` 命令逐次注入 |
+| 系统看到的 | 一台 BUS_USB 鼠标（`EXTERNAL`） | 无设备，只有事件 |
+| 光标 | 有，系统原生 | — |
+| 持续性 | 设备常驻，状态连续 | 每次注入独立，无设备状态 |
+
+### 会被当成键鼠吗
+
+**会。** 有鼠标设备存在 + 光标可见，应用层就能判断出「有键鼠」。这是应用
+自己的决定（`Input.getDeviceType()`、光标可见性、Unity/Unreal 的输入后端探测），
+系统不会替它判断。
+
+### 手柄还能用吗
+
+**能。** 依据：
+
+```
+9: Retroid Pocket Controller
+    Classes: KEYBOARD | GAMEPAD | JOYSTICK | EXTERNAL
+```
+
+手柄是独立的物理设备，我们**没有注册任何会抢它位置的设备**；
+`input keyevent` 也不建立持续的设备状态，不会改动厂商 ID 或设备映射。
+
+「被识别成键鼠」和「手柄不能用」是两件事 —— 前者是应用层看到光标，
+后者需要输入设备冲突才会发生。
+
+### 已知的兼容性风险（未实测游戏）
+
+本项目的目标是**安卓软件 + 远程桌面**（Chrome、Termux、Moonlight、
+各种远程桌面客户端），不是手游。下面是按实现推断的风险，不是实测结论：
+
+- **远程桌面 / 浏览器 / 终端**：没问题。它们只关心字符与鼠标事件，
+  这正是我们注入的东西。Termux 的 `inputType=TYPE_NULL` 有专门处理
+  （`HiddenIme.TERMINAL_PKGS` 白名单，见第 13 节）。
+- **`input keyevent` 无设备来源**：注入事件的 `deviceId = -1`。
+  少数引擎（部分 Unity 手游）会把这类「模拟输入」当噪声忽略。
+  如果某个 App 收不到按键但能收到鼠标，多半是这个原因。
+- **检测到鼠标就切键鼠 UI**：部分手机会因此隐藏屏幕手柄提示或切换 UI 布局。
+  这是游戏自己的策略，不是设备被占用。
+- **组合键走 `input keycombination`**：需要较新的 Android（本项目实测
+  android-13 基线可用）。老系统上 Ctrl/Alt 组合键可能失效。
+- **中文不走键盘通道**：非 ASCII 文字通过隐藏 IME 的 `commitText` 上屏，
+  和上面两条都无关。所以中文能进的地方，英文一定也能进。
+
+---
+
+## 10. 焦点与生命周期（关键设计）
 
 ```
 上屏输入框获得焦点
@@ -294,7 +382,7 @@ adb shell "su -c 'cat /sys/class/input/eventN/device/capabilities/rel'"
 
 ---
 
-## 10. 排查
+## 11. 排查
 
 ```bash
 # 键盘/焦点/鼠标决策
@@ -325,7 +413,7 @@ adb shell "dumpsys activity service com.android.systemui/.SystemUIService | grep
 
 ---
 
-## 11. 文件清单
+## 12. 文件清单
 
 ```
 src/com/splitkey/ime/
@@ -364,11 +452,14 @@ device/install.sh            一键：编 uimouse + 推文件 + 装 APK + 设 IM
 
 ---
 
-## 12. 已知未完成
+## 13. 已知未完成
 
 - **候选胶囊点击选择**：`wordRects` 在 `onDraw` 里算，点击命中可能滞后。
   键盘侧已经能选（左右键移高亮 + 数字键直选），所以这条优先级不高
 - **`✕` 之后进程常驻**：没有「彻底退出」的入口，只能 `am force-stop`
+- **游戏兼容性未实测**：本项目面向安卓软件与远程桌面，没在手游上验证过。
+  第 9 节列的是按实现推断的风险（`input keyevent` 的 `deviceId=-1`、
+  应用检测到鼠标后切换键鼠 UI），不是实测结论
 - **终端类 app 白名单写死**：`HiddenIme.TERMINAL_PKGS` 只放了 `com.termux`。
   别的终端 app（同样用 `inputType=TYPE_NULL`）要自己加，否则看不到候选
 - **Termux 里胶囊位置固定**：它不支持 `requestCursorUpdates`（返回 false），
@@ -379,7 +470,7 @@ device/install.sh            一键：编 uimouse + 推文件 + 装 APK + 设 IM
 
 ---
 
-## 13. 第三方组件
+## 14. 第三方组件
 
 `libsplitkey_rime.so` 静态链接下面这些组件。全部是宽松许可（无 GPL），
 不要求 SplitKey 自身开源，但要求随二进制保留声明。
