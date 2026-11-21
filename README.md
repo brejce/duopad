@@ -8,6 +8,27 @@
 > 下屏键盘、屏幕键盘、虚拟键盘、软键盘、触摸板、触控板、鼠标指针、中文输入法、
 > Rime、librime、Android 悬浮窗、副屏键盘、second screen keyboard、touchpad。
 
+### 关于名字：DuoPad 与 SplitKey
+
+本项目曾叫 **SplitKey**，2026-11 改名为 **DuoPad**。
+改名只动了**用户可见的名称**（桌面图标、通知、许可页、仓库名）。
+
+以下这些**仍是 splitkey**，是故意保留的，不是漏改：
+
+| 位置 | 值 | 为什么不动 |
+|---|---|---|
+| 包名 | `com.splitkey.ime` | 改包名要重编 `librime` 的 `.so`；且设备上会变成「新 App」，所有设置丢失 |
+| logcat TAG | `SplitKey` | 排查命令（`adb logcat -s SplitKey`）和脚本都依赖它 |
+| SharedPreferences | `splitkey` | 改名等于重置主题、震动、亮度设置 |
+| uinput 设备名 | `SplitKey Virtual Mouse` | 已注册的设备名，改名会改变系统设备列表的稳定标识 |
+| 设备端临时文件 | `/data/local/tmp/sk_*` | `sk_in` / `sk_mouse` 是脚本与 App 之间的 FIFO 约定 |
+| 环境变量 | `LIBSPLITKEY_RIME_SO` | 已写进构建脚本，改了要连带改文档 |
+| 产物文件名 | `build/splitkey.apk` | `device/install.sh` 按这个路径找 APK |
+| 仓库目录 | 开发机上是 `~/Project/splitkey` | 个人习惯，和仓库名无关 |
+
+所以看到 `com.splitkey` / `SplitKey` 时不用怀疑：**应用叫 DuoPad，内部标识还是 splitkey。**
+这和「应用叫 VS Code、包名是 `com.microsoft.vscode`」是一回事。
+
 ### 为什么需要它
 
 Retroid Pocket Duo 是翻盖双屏掌机，下屏是一块 1280×960 的触摸屏。
@@ -142,7 +163,7 @@ ADB_SERIAL=192.168.1.10:5555 ./device/install.sh
 
 | 操作 | 效果 |
 |---|---|
-| 点桌面 SplitKey 图标 | 强制显示键盘（`pin=true`） |
+| 点桌面 DuoPad 图标 | 强制显示键盘（`pin=true`） |
 | 上屏点可编辑输入框 | 焦点广播 → 键盘自动出现 |
 | 点左上角 `✕` | **只收起键盘，服务不死** |
 
@@ -405,7 +426,7 @@ adb shell "dumpsys activity service com.android.systemui/.SystemUIService | grep
 
 | 现象 | 原因 |
 |---|---|
-| 键盘不出现 | `✕` 杀过服务 / 小球拦截触摸 / 输入法没设成 SplitKey |
+| 键盘不出现 | `✕` 杀过服务 / 小球拦截触摸 / 输入法没设成 `com.splitkey.ime/.HiddenIme` |
 | 有事件无光标 | `capabilities/rel` 不是 143；或 touch mode = 1 |
 | 双指滑完指针跑 | 多指结束剩的手指被当指针（`suppressPointer` 负责拦） |
 | 三指很难触发 | 用 `onUp` 的单指坐标算位移（应看 MOVE 阶段重心） |
@@ -473,7 +494,7 @@ device/install.sh            一键：编 uimouse + 推文件 + 装 APK + 设 IM
 ## 14. 第三方组件
 
 `libsplitkey_rime.so` 静态链接下面这些组件。全部是宽松许可（无 GPL），
-不要求 SplitKey 自身开源，但要求随二进制保留声明。
+不要求 DuoPad 自身开源，但要求随二进制保留声明。
 
 | 组件 | 许可 |
 |---|---|
