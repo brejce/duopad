@@ -169,8 +169,12 @@ public class TouchpadView extends View {
     /** 主题色留底：全屏态要临时把板面压成纯黑 */
     private Theme.Colors colors;
 
+    /** 最近一次 applyTheme 传入的（可能已被压暗）配色 */
+    private Theme.Colors applied;
+
     public void applyTheme(Theme.Colors t) {
         colors = t;
+        applied = t;
         padPaint.setColor(t.pad);
         wheelPaint.setColor(t.wheel);
         tickPaint.setColor(t.sub);
@@ -205,15 +209,13 @@ public class TouchpadView extends View {
             wheelLeft = WHEEL_LEFT_DEF;
             wheelRight = WHEEL_RIGHT_DEF;
         }
-        // 全屏时板面纯黑，其余状态回主题色
-        padPaint.setColor(on ? 0xFF000000 : (colors != null ? colors.pad : 0xFF202028));
-        wheelPaint.setColor(on ? 0xFF000000
-                : (colors != null ? colors.wheel : 0xFF2A2A32));
+        // 全屏时板面纯黑，其余状态回当前配色（可能已被亮度/变暗压过）
+        Theme.Colors c = applied != null ? applied : colors;
+        padPaint.setColor(on ? 0xFF000000 : (c != null ? c.pad : 0xFF202028));
+        wheelPaint.setColor(on ? 0xFF000000 : (c != null ? c.wheel : 0xFF2A2A32));
         // 刻度、箭头在全黑上要够亮才看得见
-        hintPaint.setColor(on ? 0xFF9A9AA6
-                : (colors != null ? colors.text : 0xFFEDEDED));
-        tickPaint.setColor(on ? 0xFF5A5A66
-                : (colors != null ? colors.sub : 0xFF5A5A5A));
+        hintPaint.setColor(on ? 0xFF9A9AA6 : (c != null ? c.text : 0xFFEDEDED));
+        tickPaint.setColor(on ? 0xFF5A5A66 : (c != null ? c.sub : 0xFF5A5A5A));
         requestLayout();
         invalidate();
     }

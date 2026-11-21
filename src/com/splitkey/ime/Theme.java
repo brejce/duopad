@@ -48,6 +48,31 @@ public final class Theme {
             this.locked = locked; this.faint = faint; this.textFaint = textFaint;
             this.pad = pad; this.wheel = wheel;
         }
+
+        /**
+         * 按比例把每个颜色往黑里压（0..1）—— 用于整体亮度 / 闲置变暗。
+         *
+         * 为什么不是 setAlpha()：降低 View alpha 是「变透明」，会透出桌面，
+         * 而且 OLED 上透出的底部内容照样发光。压 RGB 才是真省电、真不刺眼。
+         * 文字色一起压：亮底上深字变浅仍可读，暗底上浅字变暗也仍可读，
+         * 逐通道乘同一个系数不会把对比翻转。
+         */
+        public Colors scale(float k) {
+            if (k >= 0.999f) return this;
+            if (k <= 0f) k = 0f;
+            return new Colors(
+                    mul(bg, k), mul(key, k), mul(func, k), mul(down, k),
+                    mul(text, k), mul(sub, k), mul(armed, k), mul(locked, k),
+                    mul(faint, k), mul(textFaint, k), mul(pad, k), mul(wheel, k));
+        }
+
+        private static int mul(int argb, float k) {
+            int a = (argb >>> 24) & 0xFF;
+            int r = (int) (((argb >> 16) & 0xFF) * k);
+            int g = (int) (((argb >> 8) & 0xFF) * k);
+            int b = (int) ((argb & 0xFF) * k);
+            return (a << 24) | (r << 16) | (g << 8) | b;
+        }
     }
 
     /** 白天（现行配色，保持不变） */

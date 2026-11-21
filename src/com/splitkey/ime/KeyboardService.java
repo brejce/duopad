@@ -46,6 +46,28 @@ public class KeyboardService extends Service
     private android.widget.FrameLayout.LayoutParams tlp;
     /** true = 触摸板铺满下屏，键盘收起 */
     private boolean touchpadFull;
+
+    // ---- 闲置保护：先变暗、再收起（见 Idle） ----
+    /** true = 当前处于「闲置变暗」状态，决定 setKbAlpha 该乘哪个系数 */
+    private boolean idleDimmed;
+    /** >=0 = 正在预览（设置页拖滑块），-1 = 正常按存盘值 */
+    private float previewAlpha = -1f;
+    private final Runnable idleDim = () -> {
+        idleDimmed = true;
+        applyKbAlpha();
+    };
+    /** 变更亮度/变暗值后实时重算（设置页拖动滑块就生效） */
+    private final Idle.Listener brightListener = this::applyKbAlpha;
+    private final Runnable idleHide = () -> {
+        Log.e(TAG, "idle hide");
+        idleDimmed = false;
+        applyKbAlpha();
+        kbPinned = false;
+        touchpadFull = false;
+        toggleKeyboard(false);
+    };
+    /** 供设置页触发亮度预览（同进程直连，不走广播） */
+    static KeyboardService current;
     private android.widget.FrameLayout kbRoot;
     private float curX = 960, curY = 540;
     private WindowManager wm;
@@ -123,6 +145,7 @@ public class KeyboardService extends Service
     @Override
     public void onCreate() {
         super.onCreate();
+        current = this;
 
         NotificationManager nm = getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel(CH, "SplitKey",
@@ -153,8 +176,8 @@ public class KeyboardService extends Service
 
         touchpad = new TouchpadView(kbCtx);
         touchpad.setListener(new TouchpadView.Listener() {
-            @Override public void onMove(float dx, float dy) { moveCursor(dx, dy); }
-            @Override public void onLeftClick() { sendMouse("C"); }
+            @Override public void onMove(float dx, float dy) { pokeIdle(); moveCursor(dx, dy); }
+            @Override public void onLeftClick() { pokeIdle(); sendMouse("C"); }
             @Override public void onRightClick() { sendMouse("R"); }
             @Override public void onMiddleClick() { sendMouse("B"); }
             @Override public void onDragStart() { sendMouse("D"); }
@@ -201,6 +224,7 @@ public class KeyboardService extends Service
         registerReceiver(cursorRx, new IntentFilter(HiddenIme.ACTION_CURSOR),
                 Context.RECEIVER_EXPORTED);
         Theme.addListener(this, themeListener);
+        Idle.addListener(this, brightListener);
         getApplicationContext().registerComponentCallbacks(uiModeCb);
 
         Intent q = new Intent(HiddenIme.ACTION_QUERY);
@@ -345,19 +369,76 @@ public class KeyboardService extends Service
         updateCapsule();
     }
 
+    /**
+     * 有任何输入就重置闲置计时 —— 键盘在被用着，不该变暗/收起。
+     * 收起状态下又来了焦点，也会走这里，所以唤醒是自动的。
+     */
+    private void pokeIdle() {
+        handler.removeCallbacks(idleDim);
+        handler.removeCallbacks(idleHide);
+        idleDimmed = false;
+        applyKbAlpha();
+        if (kbRoot == null || kbRoot.getParent() == null) return;
+
+        long dim = Idle.dimMs(this);
+        long hide = Idle.hideMs(this);
+        // 收起必须晚于变暗，否则变暗这一步永远看不到
+        if (dim > 0) handler.postDelayed(idleDim, dim);
+        if (hide > 0) handler.postDelayed(idleHide, Math.max(hide, dim + 1));
+    }
+
+    /**
+     * 整窗透明度 = 整体亮度 × （闲置变暗 ? 变暗值 : 1）。
+     * 只改视觉，不动几何 —— 键位、触摸板、滚轮的坐标一概不碰。
+     */
+    private void applyKbAlpha() {
+        if (kb == null) return;
+        float k = previewAlpha >= 0 ? previewAlpha : baseAlpha();
+        // 压颜色，不是压 View alpha：alpha 只是变透明，会透出桌面且照样发光
+        Theme.Colors c = Theme.colors(this).scale(k);
+        kb.applyTheme(c);
+        if (touchpad != null) touchpad.applyTheme(c);
+    }
+
+    /** 存盘值算出来的透明度 = 整体亮度 ×（闲置变暗 ? 变暗值 : 1） */
+    private float baseAlpha() {
+        float a = Idle.brightness(this) / 100f;
+        if (idleDimmed) a *= Idle.dimPct(this) / 100f;
+        return a;
+    }
+
+    /**
+     * 设置页拖滑块时的实时预览：直接给最终透明度，绕过存盘值。
+     * 传 -1 结束预览，回到存盘值。
+     */
+    static void preview(float alpha) {
+        KeyboardService s = current;
+        if (s == null) return;
+        s.previewAlpha = alpha;
+        s.handler.post(s::applyKbAlpha);
+    }
+
     private void toggleKeyboard(boolean show) {
         try {
             // 以真实挂载状态为准：窗口可能被系统藏掉/摘掉，布尔量会和现实脱节
             boolean attached = kbRoot.getParent() != null;   // 只信父容器，窗口被系统藏掉时这个值仍准确
             if (!show && attached) {
+                handler.removeCallbacks(idleDim);
+                handler.removeCallbacks(idleHide);
+                idleDimmed = false;
                 wm.removeView(kbRoot);
                 kb.reset();          // 复位到字母层 + 清修饰键
                 Log.e(TAG, "keyboard hidden");
             } else if (show && !attached) {
                 wm.addView(kbRoot, kbParams());
                 Log.e(TAG, "keyboard shown");
+                pokeIdle();          // 内部会先重置 idleDimmed 再 applyKbAlpha
                 // 键盘一露头就要确认上屏 IME 在跑，否则中文提交无处可去
                 ensureImeStarted();
+            } else if (show) {
+                // 已经在显示：重算计时/亮度。否则重复点图标或焦点回来时，
+                // 会停在「已变暗」的状态里不动。
+                pokeIdle();
             }
         } catch (Throwable t) {
             Log.e(TAG, "keyboard toggle failed: " + t);
@@ -524,12 +605,14 @@ public class KeyboardService extends Service
         try { unregisterReceiver(focusRx); } catch (Exception ignored) {}
         try { unregisterReceiver(cursorRx); } catch (Exception ignored) {}
         Theme.removeListener(themeListener);
+        Idle.removeListener(brightListener);
         try { getApplicationContext().unregisterComponentCallbacks(uiModeCb); }
         catch (Throwable ignored) {}
         // 不能用 isAttachedToWindow 判断：stopSelf 后它会先变 false，窗口就漏在屏幕上
         try { if (kbRoot != null) wm.removeView(kbRoot); } catch (Throwable ignored) {}
         try { if (topWm != null && capsule != null) topWm.removeView(capsule); } catch (Throwable ignored) {}
         if (rime instanceof RimeEngineImpl) ((RimeEngineImpl) rime).destroy();
+        if (current == this) current = null;
         super.onDestroy();
     }
 
@@ -632,6 +715,7 @@ public class KeyboardService extends Service
 
     @Override
     public void onChar(String ch) {
+        pokeIdle();
         Log.e(TAG, "onChar '" + ch + "'");
         boolean consumed = false;
         if (ch.length() == 1) {
@@ -684,6 +768,7 @@ public class KeyboardService extends Service
 
     @Override
     public void onKey(int keyCode) {
+        pokeIdle();
         Log.e(TAG, "onKey " + keyCode);
         if (rime.handleKey(keyCode)) { updateCapsule(); return; }
         shuttle.sendKey(keyCode);
