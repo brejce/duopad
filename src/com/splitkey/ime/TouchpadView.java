@@ -53,6 +53,8 @@ public class TouchpadView extends View {
         void onScrollH(int steps);
         /** 三指滑动：0=上 1=下 2=左 3=右 */
         void onThreeFingerSwipe(int dir);
+        /** 点左上角放大/缩小按钮 */
+        void onZoomToggle();
     }
 
     // ---- 手势参数（按笔记本手感调）----
@@ -76,10 +78,19 @@ public class TouchpadView extends View {
     // 滚轮条几何（右侧竖条，和 ⌫ 对齐）
     private static final float SCROLL_W = 100f;
     // 实测自 d2-change.png：触摸板 165..1113，滚轮条 1123..1265，上下边距 9
-    private static final float WHEEL_LEFT  = 1123f;
-    private static final float WHEEL_RIGHT = 1265f;
-    private static final float MARGIN = 9f;
-    private static final float PAD_RIGHT = 1113f;
+    private static final float WHEEL_LEFT_DEF  = 1123f;
+    private static final float WHEEL_RIGHT_DEF = 1265f;
+    private static final float MARGIN_DEF = 9f;
+    private static final float PAD_RIGHT_DEF = 1113f;
+
+    // ---- 全屏态用的实际几何（默认 = 上面那套实测值） ----
+    private float wheelLeft  = WHEEL_LEFT_DEF;
+    private float wheelRight = WHEEL_RIGHT_DEF;
+    private float margin     = MARGIN_DEF;
+    private float padRight   = PAD_RIGHT_DEF;
+
+    /** true = 触摸板铺满下屏（键盘隐藏） */
+    private boolean expanded;
 
     /** 左上角放大/缩小按钮：正方形区域与中心（尚未接功能） */
     private static final float ZOOM_SIZE = 52f;
@@ -97,6 +108,8 @@ public class TouchpadView extends View {
 
     /** 触摸板左边界（由 Service 按键盘布局设定） */
     private float leftInset = 165f;
+    /** 非全屏时的左边界，恢复用 */
+    private float leftInsetDef = 165f;
 
     private Listener listener;
     private Vibrator vibrator;
@@ -153,7 +166,11 @@ public class TouchpadView extends View {
     /** 换主题：板面/滚轮/刻度/箭头全部重取色 */
     public void applyTheme(Context ctx) { applyTheme(Theme.colors(ctx)); }
 
+    /** 主题色留底：全屏态要临时把板面压成纯黑 */
+    private Theme.Colors colors;
+
     public void applyTheme(Theme.Colors t) {
+        colors = t;
         padPaint.setColor(t.pad);
         wheelPaint.setColor(t.wheel);
         tickPaint.setColor(t.sub);
@@ -163,8 +180,47 @@ public class TouchpadView extends View {
         invalidate();
     }
 
+    public boolean isExpanded() { return expanded; }
+
+    /**
+     * 全屏态：触摸板铺满整个下屏，滚轮条收进右侧一小条。
+     *
+     * 底色用纯黑（不是主题的 pad 色）：这台是 OLED，大面积黑像素不发光，
+     * 既省电也不烧屏。只有缩小按钮和刻度留色，不然全黑找不着入口。
+     */
+    public void setExpanded(boolean on) {
+        if (expanded == on) return;
+        expanded = on;
+
+        if (on) {
+            leftInset = -1f;             // 负数 = 全屏，别判左边界
+            margin = 0f;
+            padRight = getWidth();       // 铺满
+            wheelLeft = getWidth();      // 全屏不要滚轮：收到零宽
+            wheelRight = getWidth();
+        } else {
+            leftInset = leftInsetDef;
+            margin = MARGIN_DEF;
+            padRight = PAD_RIGHT_DEF;
+            wheelLeft = WHEEL_LEFT_DEF;
+            wheelRight = WHEEL_RIGHT_DEF;
+        }
+        // 全屏时板面纯黑，其余状态回主题色
+        padPaint.setColor(on ? 0xFF000000 : (colors != null ? colors.pad : 0xFF202028));
+        wheelPaint.setColor(on ? 0xFF000000
+                : (colors != null ? colors.wheel : 0xFF2A2A32));
+        // 刻度、箭头在全黑上要够亮才看得见
+        hintPaint.setColor(on ? 0xFF9A9AA6
+                : (colors != null ? colors.text : 0xFFEDEDED));
+        tickPaint.setColor(on ? 0xFF5A5A66
+                : (colors != null ? colors.sub : 0xFF5A5A5A));
+        requestLayout();
+        invalidate();
+    }
+
     public void setLeftInset(float x) {
-        this.leftInset = x;
+        this.leftInsetDef = x;
+        if (!expanded) this.leftInset = x;
         invalidate();
     }
 
@@ -196,31 +252,33 @@ public class TouchpadView extends View {
         // 窗口高度 = 左列 TAB 键底部（Service 给的），所以底边贴 h：
         // 不再减 MARGIN，否则会比 TAB 早 9px 结束。
         android.graphics.RectF padRf = new android.graphics.RectF(
-                leftInset, MARGIN, PAD_RIGHT, h);
+                leftInset, margin, padRight, h);
         c.drawRoundRect(padRf, 10, 10, padPaint);
 
-        // 滚轮条
-        android.graphics.RectF wheelRf = new android.graphics.RectF(
-                WHEEL_LEFT, MARGIN, WHEEL_RIGHT, h);
-        c.drawRoundRect(wheelRf, 10, 10, wheelPaint);
-        float cx = (WHEEL_LEFT + WHEEL_RIGHT) / 2f;
+        // 滚轮条：全屏态不给（整块板子都是触摸区，没有滚动条可用之地）
+        if (!expanded) {
+            android.graphics.RectF wheelRf = new android.graphics.RectF(
+                    wheelLeft, margin, wheelRight, h);
+            c.drawRoundRect(wheelRf, 10, 10, wheelPaint);
+            float cx = (wheelLeft + wheelRight) / 2f;
 
-        arrow.reset();
-        arrow.moveTo(cx, 24);
-        arrow.lineTo(cx - 13, 46);
-        arrow.lineTo(cx + 13, 46);
-        arrow.close();
-        c.drawPath(arrow, hintPaint);
+            arrow.reset();
+            arrow.moveTo(cx, 24);
+            arrow.lineTo(cx - 13, 46);
+            arrow.lineTo(cx + 13, 46);
+            arrow.close();
+            c.drawPath(arrow, hintPaint);
 
-        arrow.reset();
-        arrow.moveTo(cx, h - 24);
-        arrow.lineTo(cx - 13, h - 46);
-        arrow.lineTo(cx + 13, h - 46);
-        arrow.close();
-        c.drawPath(arrow, hintPaint);
+            arrow.reset();
+            arrow.moveTo(cx, h - 24);
+            arrow.lineTo(cx - 13, h - 46);
+            arrow.lineTo(cx + 13, h - 46);
+            arrow.close();
+            c.drawPath(arrow, hintPaint);
 
-        for (float y = h * 0.30f; y < h * 0.66f; y += 24) {
-            c.drawRect(cx - 15, y, cx + 15, y + 3, tickPaint);
+            for (float y = h * 0.30f; y < h * 0.66f; y += 24) {
+                c.drawRect(cx - 15, y, cx + 15, y + 3, tickPaint);
+            }
         }
 
         drawZoomIcon(c);
@@ -231,7 +289,7 @@ public class TouchpadView extends View {
      * 现在只是视觉占位，onTouchEvent 里还没接。
      */
     private void drawZoomIcon(Canvas c) {
-        float x0 = leftInset + ZOOM_PAD, y0 = MARGIN + ZOOM_PAD;
+        float x0 = zoomLeft() + ZOOM_PAD, y0 = margin + ZOOM_PAD;
         float x1 = x0 + ZOOM_SIZE,       y1 = y0 + ZOOM_SIZE;
 
         // 底：很淡的圆角块，让它看得出是可点的按钮
@@ -244,26 +302,52 @@ public class TouchpadView extends View {
         zoomPaint.setStrokeCap(Paint.Cap.ROUND);
         float cx = (x0 + x1) / 2f, cy = (y0 + y1) / 2f;
 
-        // 左上：↘ 向右下的箭头（缩小）
-        c.drawLine(cx - 11, cy - 11, cx - 3, cy - 3, zoomPaint);
-        c.drawLine(cx - 11, cy - 11, cx - 11, cy - 5, zoomPaint);
-        c.drawLine(cx - 11, cy - 11, cx - 5, cy - 11, zoomPaint);
+        if (expanded) {
+            // 全屏态：四条箭头朝内 = 「缩小回去」
+            c.drawLine(cx - 11, cy - 11, cx - 4, cy - 4, zoomPaint);
+            c.drawLine(cx + 11, cy - 11, cx + 4, cy - 4, zoomPaint);
+            c.drawLine(cx - 11, cy + 11, cx - 4, cy + 4, zoomPaint);
+            c.drawLine(cx + 11, cy + 11, cx + 4, cy + 4, zoomPaint);
+        } else {
+            // 常态：↘ 朝外 = 「放大」
+            c.drawLine(cx - 11, cy - 11, cx - 3, cy - 3, zoomPaint);
+            c.drawLine(cx - 11, cy - 11, cx - 11, cy - 5, zoomPaint);
+            c.drawLine(cx - 11, cy - 11, cx - 5, cy - 11, zoomPaint);
 
-        // 右下：↖ 向左上的箭头（放大）
-        c.drawLine(cx + 11, cy + 11, cx + 3, cy + 3, zoomPaint);
-        c.drawLine(cx + 11, cy + 11, cx + 11, cy + 5, zoomPaint);
-        c.drawLine(cx + 11, cy + 11, cx + 5, cy + 11, zoomPaint);
+            c.drawLine(cx + 11, cy + 11, cx + 3, cy + 3, zoomPaint);
+            c.drawLine(cx + 11, cy + 11, cx + 11, cy + 5, zoomPaint);
+            c.drawLine(cx + 11, cy + 11, cx + 5, cy + 11, zoomPaint);
+        }
+    }
+
+    /** 放大/缩小按钮的命中区（和 drawZoomIcon 画的位置一致） */
+    /** 按钮的实际左基准：全屏时 leftInset 是 -1（哨兵），按钮仍贴屏幕左边 */
+    private float zoomLeft() { return leftInset > 0 ? leftInset : 0f; }
+
+    private boolean inZoomButton(float x, float y) {
+        float x0 = zoomLeft() + ZOOM_PAD, y0 = margin + ZOOM_PAD;
+        return x >= x0 && x <= x0 + ZOOM_SIZE && y >= y0 && y <= y0 + ZOOM_SIZE;
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
         float x = e.getX(), y = e.getY();
 
-        // 左边界之外（TAB/ESC 那列）：不消费，穿透给键盘
-        if (x < leftInset) return false;
+        // 放大/缩小按钮：先于一切手势判定，否则会被当成点按
+        if (inZoomButton(x, y)) {
+            if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                Haptics.tap(getContext());
+                if (listener != null) listener.onZoomToggle();
+            }
+            return true;
+        }
 
-        boolean wheelZone = x >= WHEEL_LEFT && x <= WHEEL_RIGHT;
-        if (!wheelZone && x > PAD_RIGHT) return true;   // 触摸板与滚轮之间的缝
+        // 左边界之外（TAB/ESC 那列）：不消费，穿透给键盘。
+        // 全屏态没有键盘可取，leftInset<0 时跳过这段。
+        if (leftInset >= 0 && x < leftInset) return false;
+
+        boolean wheelZone = !expanded && x >= wheelLeft && x <= wheelRight;
+        if (!expanded && !wheelZone && x > padRight) return true;   // 板与滚轮间的缝
 
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:

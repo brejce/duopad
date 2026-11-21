@@ -43,6 +43,9 @@ public class KeyboardService extends Service
 
     private KeyboardView kb;
     private TouchpadView touchpad;
+    private android.widget.FrameLayout.LayoutParams tlp;
+    /** true = 触摸板铺满下屏，键盘收起 */
+    private boolean touchpadFull;
     private android.widget.FrameLayout kbRoot;
     private float curX = 960, curY = 540;
     private WindowManager wm;
@@ -158,6 +161,7 @@ public class KeyboardService extends Service
             @Override public void onDragEnd() { sendMouse("U"); }
             @Override public void onScrollV(int steps) { sendMouse("W:" + steps); }
             @Override public void onScrollH(int steps) { sendMouse("H:" + steps); }
+            @Override public void onZoomToggle() { toggleTouchpadFull(); }
             @Override public void onThreeFingerSwipe(int dir) {
                 // dir: 0=上 1=下 2=左 3=右（笔记本三指手势映射）
                 if (dir == 0) shuttle.sendKey(187);              // 上：任务视图
@@ -175,14 +179,14 @@ public class KeyboardService extends Service
         kbRoot.addView(kb, new android.widget.FrameLayout.LayoutParams(
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT));
-        android.widget.FrameLayout.LayoutParams tlp = new android.widget.FrameLayout.LayoutParams(
+        tlp = new android.widget.FrameLayout.LayoutParams(
                 android.widget.FrameLayout.LayoutParams.MATCH_PARENT, 0);
         tlp.gravity = Gravity.TOP;
         kbRoot.addView(touchpad, tlp);
         kbRoot.post(() -> {
             int h = kbRoot.getHeight();
             // 触摸板下边界对齐 TAB 键底部（= 左列最下键），与键盘首行留 GAP
-            tlp.height = (int) kb.colBottom();
+            if (!touchpadFull) tlp.height = (int) kb.colBottom();
             touchpad.requestLayout();
             Log.e(TAG, "touchpad h=" + tlp.height);
         });
@@ -358,6 +362,28 @@ public class KeyboardService extends Service
         } catch (Throwable t) {
             Log.e(TAG, "keyboard toggle failed: " + t);
         }
+    }
+
+    /**
+     * 触摸板全屏 / 还原。
+     *
+     * 不拆窗口：键盘和触摸板是同一个 kbRoot，这里只把 KeyboardView 藏起来、
+     * 把触摸板高度从 colBottom 拉到 MATCH_PARENT。窗口本身一直挂着，
+     * 所以焦点、IME 绑定、手势状态全都不受影响。
+     */
+    private void toggleTouchpadFull() {
+        if (kbRoot == null || kb == null || touchpad == null || tlp == null) return;
+        touchpadFull = !touchpadFull;
+        Log.e(TAG, "touchpad full=" + touchpadFull);
+
+        kb.setVisibility(touchpadFull ? android.view.View.GONE
+                                      : android.view.View.VISIBLE);
+        tlp.height = touchpadFull
+                ? android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                : (int) kb.colBottom();
+        touchpad.setExpanded(touchpadFull);
+        try { touchpad.setLayoutParams(tlp); } catch (Throwable ignored) {}
+        touchpad.requestLayout();
     }
 
     private WindowManager.LayoutParams kbParams() {
