@@ -31,9 +31,15 @@ public final class KeyboardLayout {
             0f,     // 底行
     };
 
-    /** 左侧竖列。✕ 由 Service 按 action="exit" 处理。 */
+    /**
+     * 左侧竖列。✕ 由 Service 按 action="exit" 处理。
+     *
+     * 这四个键单独一套高度分配：✕ 顶和 TAB 底固定，中间四等分。
+     * 所以它们不跟 keyH 走（会比右侧按键矮一点，这是约定好的）。
+     */
     public static final KeySpec[] LEFT = row(
             KeySpec.key("✕", KeySpec.KEY_EXIT),
+            KeySpec.key("⚙", KeySpec.KEY_SETTINGS),      // 按顺序 = 从上到下
             KeySpec.key("ESC", KeyEvent.KEYCODE_ESCAPE),
             KeySpec.key("TAB", KeyEvent.KEYCODE_TAB)
     );

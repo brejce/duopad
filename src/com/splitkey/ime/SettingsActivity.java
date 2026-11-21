@@ -20,6 +20,55 @@ public class SettingsActivity extends PageActivity {
 
         addSection("外观");
         buildThemeRow();
+
+        addSection("触感");
+        buildHapticRow();
+
+        addSection("关于");
+        buildLicensesRow();
+    }
+
+    /** 震动强度：四档，点一下即生效（键盘按下和触摸板手势共用这个值） */
+    private void buildHapticRow() {
+        LinearLayout row = addRow("震动强度", null);
+
+        int cur = Haptics.level(this);
+        LinearLayout seg = new LinearLayout(this);
+        seg.setOrientation(LinearLayout.HORIZONTAL);
+
+        for (int i = 0; i < Haptics.LABELS.length; i++) {
+            final int lv = i;
+            TextView t = new TextView(this);
+            t.setText(Haptics.LABELS[i]);
+            t.setTextSize(14f);
+            t.setGravity(android.view.Gravity.CENTER);
+            int px = dp(12), py = dp(8);
+            t.setPadding(px, py, px, py);
+
+            boolean on = (cur == lv);
+            t.setTextColor(on ? 0xFFFFFFFF : tc.text);
+            t.setBackground(rounded(on ? tc.locked : tc.func, 8));
+            t.setOnClickListener(v -> {
+                Haptics.setLevel(this, lv);
+                Haptics.tap(this);          // 立刻试一下强度
+                recreate();
+            });
+
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            if (i > 0) lp.leftMargin = dp(8);
+            seg.addView(t, lp);
+        }
+
+        row.addView(seg);
+    }
+
+    /** 开源许可：点进去看 licenses/ 下的第三方许可原文 */
+    private void buildLicensesRow() {
+        LinearLayout row = addRow("开源许可", "›");
+        row.setOnClickListener(v ->
+                startActivity(new android.content.Intent(this, LicensesActivity.class)));
     }
 
     /**

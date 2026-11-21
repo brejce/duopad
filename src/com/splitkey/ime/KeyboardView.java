@@ -32,6 +32,8 @@ public class KeyboardView extends View {
         void onExit();
         /** Ctrl/Alt + 空格：切中英（在本地处理，绝不注入系统热键） */
         void onToggleIme();
+        /** ⚙：打开设置页 */
+        void onSettings();
     }
 
     // ---- 视觉参数 ----
@@ -230,20 +232,24 @@ public class KeyboardView extends View {
         // 键盘贴底
         float y = h - BOTTOM - totalH;
 
-        // ---- 左列：✕ / ESC / TAB 竖直排在触摸板左侧 ----
-        // TAB 贴底（与触摸板下沿对齐），ESC 紧随其上、间距 = GAP，✕ 贴顶
+        // ---- 左列：✕ / ESC / ⚙ / TAB 竖直排在触摸板左侧 ----
+        // 这四个键按自己的高度走，不跟右侧 keyH：✕ 顶部和 TAB 底部固定，
+        // 中间垂直四等分。右侧键盘行、触摸板、滚轮的坐标一概不受影响。
         float leftW = KeyboardLayout.LEFT_WIDTH * unitW;
         KeySpec[] left = KeyboardLayout.LEFT;
+        float leftTop = PAD;            // ✕ 贴顶，与原版一致
+        // 原版 TAB 底部 = y - GAP - keyH + keyH = y - GAP（不是 y）。
+        // 这里必须沿用，差一个 GAP 就会整体下移。
+        float leftBottom = y - GAP;
+        float leftKeyH = (leftBottom - leftTop - GAP * (left.length - 1)) / left.length;
         leftColBottom = 0f;
-        for (int i = left.length - 1; i >= 0; i--) {
-            float top = (i == 0)
-                    ? PAD                                            // ✕ 贴顶
-                    : y - GAP - (left.length - 1 - i) * (keyH + GAP) - keyH;  // 自底向上
+        for (int i = 0; i < left.length; i++) {
+            float top = leftTop + i * (leftKeyH + GAP);
             RKey k = new RKey();
             k.spec = left[i];
-            k.r.set(PAD, top, PAD + leftW, top + keyH);
+            k.r.set(PAD, top, PAD + leftW, top + leftKeyH);
             keys.add(k);
-            leftColBottom = Math.max(leftColBottom, top + keyH);
+            leftColBottom = Math.max(leftColBottom, top + leftKeyH);
         }
 
         // ---- 键盘横排 ----
@@ -383,6 +389,8 @@ public class KeyboardView extends View {
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 pressed = hit(x, y);
+                // 按下就震，不等抬起 —— 抬手还要等 50-150ms，那样反馈是滞后的
+                if (pressed != null) Haptics.tap(getContext());
                 longFired = false;
                 lpHandler.removeCallbacks(longPress);
                 if (pressed != null && pressed.spec.sub != null) {
@@ -498,6 +506,11 @@ public class KeyboardView extends View {
                 rows = KeyboardLayout.SYMBOL;
                 layout(getWidth(), getHeight());
                 invalidate();
+                consumeArmed();
+                return;
+            }
+            if (code == KeySpec.KEY_SETTINGS) {     // ⚙ → 设置页
+                listener.onSettings();
                 consumeArmed();
                 return;
             }

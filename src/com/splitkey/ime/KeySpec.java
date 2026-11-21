@@ -15,6 +15,7 @@ public final class KeySpec {
     public static final int KEY_EXIT   = -1;    // ✕ 关键盘
     public static final int KEY_SYMBOL = -2;    // &123
     public static final int KEY_ALPHA  = -3;    // ABC
+    public static final int KEY_SETTINGS = -4;  // ⚙ 打开设置页
 
     public final String label;
     public final String sub;

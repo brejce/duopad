@@ -630,6 +630,17 @@ public class KeyboardService extends Service
     }
 
     @Override
+    public void onSettings() {
+        Intent it = new Intent(this, SettingsActivity.class);
+        it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(it);
+        } catch (Throwable t) {
+            Log.e(TAG, "open settings failed: " + t);
+        }
+    }
+
+    @Override
     public void onToggleIme() {
         boolean ascii = rime.toggleAsciiMode();
         Log.e(TAG, "toggle ime -> ascii=" + ascii);

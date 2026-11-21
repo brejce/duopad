@@ -172,10 +172,13 @@ public class TouchpadView extends View {
 
     /** 震动反馈：设备没有物理按压，这是唯一的「按下」反馈 */
     private void haptic() {
+        // 强度跟设置页同一个值；触摸板手势略长一点，区分「手势」和「按键」
+        int d = Haptics.ms(getContext());
+        if (d <= 0) return;
         if (vibrator == null || !vibrator.hasVibrator()) return;
         try {
             vibrator.vibrate(VibrationEffect.createOneShot(
-                    12, VibrationEffect.DEFAULT_AMPLITUDE));
+                    d + 6, VibrationEffect.DEFAULT_AMPLITUDE));
         } catch (Throwable ignored) {}
     }
 
