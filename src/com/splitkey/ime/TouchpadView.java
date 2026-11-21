@@ -251,9 +251,16 @@ public class TouchpadView extends View {
 
         // 窗口高度 = 左列 TAB 键底部（Service 给的），所以底边贴 h：
         // 不再减 MARGIN，否则会比 TAB 早 9px 结束。
-        android.graphics.RectF padRf = new android.graphics.RectF(
-                leftInset, margin, padRight, h);
-        c.drawRoundRect(padRf, 10, 10, padPaint);
+        //
+        // 全屏态必须画直角矩形：drawRoundRect 的圆角会漏出 4 个角，
+        // 露出底下的桌面/壁纸（OLED 上就是几颗白点）。
+        // 也不读 padRight —— setExpanded 时视图可能还没布局，getWidth()=0。
+        if (expanded) {
+            c.drawRect(0, 0, w, h, padPaint);
+        } else {
+            c.drawRoundRect(new android.graphics.RectF(leftInset, margin, padRight, h),
+                    10, 10, padPaint);
+        }
 
         // 滚轮条：全屏态不给（整块板子都是触摸区，没有滚动条可用之地）
         if (!expanded) {
