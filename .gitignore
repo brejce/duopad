@@ -11,3 +11,10 @@ build/
 
 # generated from licenses/ by build.sh
 assets/
+
+# 视频素材与成片：体积大，且含设备截图/实拍，不进仓库
+video/assets/
+video/out/
+video/*.mp4
+video/narration/
+video/narration.wav
