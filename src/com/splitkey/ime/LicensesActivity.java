@@ -16,8 +16,8 @@ public class LicensesActivity extends PageActivity {
     protected void build() {
         addTitle("开源许可");
 
-        addBody("SplitKey 的 Rime 输入引擎静态链接了以下组件。"
-                + "全部为宽松许可，不要求 SplitKey 自身采用相同许可。");
+        addBody("DuoPad 的 Rime 输入引擎静态链接了以下组件。"
+                + "全部为宽松许可，不要求 DuoPad 自身采用相同许可。");
 
         String[] files = listLicenses();
         if (files.length == 0) {

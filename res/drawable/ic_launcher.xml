@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DuoPad 图标：双屏翻盖掌机的剪影。
+
+  构造（视口 108×108，居中）：
+    · 上屏  = 圆角矩形，里面一条光标横线（代表正在输入）
+    · 铰链  = 中间窄条
+    · 下屏  = 圆角矩形，里面两排小键位（代表键盘）
+
+  跟着主题走：深色底用亮前景，浅色底用暗前景。桌面图标由系统按其
+  自适应方式取色，这里给出 monochrome 单色版本，系统在主题图标
+  （themed icons）下会自己上色；不支持的桌面直接用这里画好的配色。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 整机底色：略深的圆角方块，让图标在浅色桌面上有轮廓 -->
+    <path
+        android:fillColor="#1B1B1E"
+        android:pathData="M20,10 h68 a10,10 0 0 1 10,10 v68 a10,10 0 0 1 -10,10 H20 a10,10 0 0 1 -10,-10 V20 a10,10 0 0 1 10,-10 z" />
+
+    <!-- 上屏：环形描边（屏幕是亮的） -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#7FB3E8"
+        android:strokeWidth="3"
+        android:pathData="M27,17 h54 a6,6 0 0 1 6,6 v22 a6,6 0 0 1 -6,6 H27 a6,6 0 0 1 -6,-6 V23 a6,6 0 0 1 6,-6 z" />
+
+    <!-- 上屏里的光标横线 -->
+    <path
+        android:fillColor="#7FB3E8"
+        android:pathData="M32,36 h20 v3 h-20 z" />
+
+    <!-- 铰链 -->
+    <path
+        android:fillColor="#4A4A52"
+        android:pathData="M40,55 h28 v3 h-28 z" />
+
+    <!-- 下屏：键盘面板 -->
+    <path
+        android:fillColor="#2C2C31"
+        android:pathData="M27,62 h54 a6,6 0 0 1 6,6 v14 a6,6 0 0 1 -6,6 H27 a6,6 0 0 1 -6,-6 V68 a6,6 0 0 1 6,-6 z" />
+
+    <!-- 键位：上排 6 个小方块 -->
+    <group>
+        <path android:fillColor="#EDEDED" android:pathData="M29,67 h6 v5 h-6 z" />
+        <path android:fillColor="#EDEDED" android:pathData="M38,67 h6 v5 h-6 z" />
+        <path android:fillColor="#EDEDED" android:pathData="M47,67 h6 v5 h-6 z" />
+        <path android:fillColor="#EDEDED" android:pathData="M56,67 h6 v5 h-6 z" />
+        <path android:fillColor="#EDEDED" android:pathData="M65,67 h6 v5 h-6 z" />
+        <path android:fillColor="#EDEDED" android:pathData="M74,67 h6 v5 h-6 z" />
+    </group>
+
+    <!-- 键位：下排（空格条居中） -->
+    <path android:fillColor="#9A9AA2" android:pathData="M29,76 h6 v5 h-6 z" />
+    <path android:fillColor="#9A9AA2" android:pathData="M40,76 h28 v5 h-28 z" />
+    <path android:fillColor="#9A9AA2" android:pathData="M74,76 h6 v5 h-6 z" />
+</vector>

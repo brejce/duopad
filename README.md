@@ -1,4 +1,4 @@
-# SplitKey
+# DuoPad
 
 双屏掌机（Retroid Pocket Duo）的下屏键盘 + 触摸板，驱动上屏的**真实系统鼠标**和按键输入。
 

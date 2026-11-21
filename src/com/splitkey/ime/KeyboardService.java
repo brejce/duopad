@@ -161,10 +161,10 @@ public class KeyboardService extends Service
         current = this;
 
         NotificationManager nm = getSystemService(NotificationManager.class);
-        nm.createNotificationChannel(new NotificationChannel(CH, "SplitKey",
+        nm.createNotificationChannel(new NotificationChannel(CH, "DuoPad",
                 NotificationManager.IMPORTANCE_MIN));
         startForeground(NOTIF_ID, new Notification.Builder(this, CH)
-                .setContentTitle("SplitKey")
+                .setContentTitle("DuoPad")
                 .setSmallIcon(android.R.drawable.ic_menu_edit)
                 .build());
 

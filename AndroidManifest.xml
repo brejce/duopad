@@ -9,13 +9,14 @@
 
     <application
         android:allowBackup="false"
-        android:label="SplitKey">
+        android:icon="@drawable/ic_launcher"
+        android:label="DuoPad">
 
         <!-- 桌面图标 -->
         <activity
             android:name=".Launcher"
             android:exported="true"
-            android:label="SplitKey"
+            android:label="DuoPad"
             android:theme="@android:style/Theme.NoDisplay">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -42,7 +43,7 @@
         <service
             android:name=".HiddenIme"
             android:exported="true"
-            android:label="SplitKey"
+            android:label="DuoPad"
             android:permission="android.permission.BIND_INPUT_METHOD">
             <intent-filter>
                 <action android:name="android.view.InputMethod" />
@@ -56,7 +57,7 @@
         <service
             android:name=".KeyboardService"
             android:exported="true"
-            android:label="SplitKey Keyboard"
+            android:label="DuoPad Keyboard"
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
