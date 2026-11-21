@@ -622,6 +622,13 @@ public class KeyboardService extends Service
         updateCapsule();
     }
 
+    /** 原样上屏：不碰 Rime。用于长按副标签、Shift/Ctrl + 标点。 */
+    @Override
+    public void onCharRaw(String ch) {
+        Log.e(TAG, "onCharRaw '" + ch + "'");
+        if (ch != null && !ch.isEmpty()) shuttle.sendText(ch);
+    }
+
     @Override
     public void onToggleIme() {
         boolean ascii = rime.toggleAsciiMode();

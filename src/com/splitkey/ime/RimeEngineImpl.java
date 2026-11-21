@@ -152,9 +152,17 @@ public final class RimeEngineImpl implements RimeEngine {
                     return true;
 
                 case KeyEvent.KEYCODE_ENTER:
+                    // 回车 = 拼音原样上屏（和电脑一致），不是丢弃。
+                    // XK_Return 绑的是 CommitRawInput：ClearNonConfirmedComposition + Commit。
+                    if (!hasComposition) return false;
+                    RimeNative.processKey(session, 0xff0d, 0);
+                    drainCommit();
+                    refresh();
+                    return true;
+
                 case KeyEvent.KEYCODE_ESCAPE:
                     if (!hasComposition) return false;
-                    RimeNative.clearComposition(session);
+                    RimeNative.clearComposition(session);   // Esc 才是丢弃
                     refresh();
                     return true;
 

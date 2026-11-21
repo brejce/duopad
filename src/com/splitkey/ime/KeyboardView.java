@@ -24,6 +24,8 @@ public class KeyboardView extends View {
 
     public interface Listener {
         void onChar(String ch);
+        /** 原样上屏，不经过 Rime（不把 ASCII 标点转成全角） */
+        void onCharRaw(String ch);
         void onKey(int keyCode);
         void onKeyWithMeta(int keyCode, int metaState);
         /** ✕：收起键盘 */
@@ -68,12 +70,14 @@ public class KeyboardView extends View {
             new android.os.Handler(android.os.Looper.getMainLooper());
     private boolean longFired;
     private final Runnable longPress = () -> {
-        if (pressed != null && pressed.spec.sub != null && listener != null) {
-            longFired = true;
-            Log.e("SplitKey", "long press -> " + pressed.spec.sub);
-            listener.onChar(pressed.spec.sub);
-            invalidate();
-        }
+        if (pressed == null || pressed.spec.sub == null || listener == null) return;
+        longFired = true;
+        // 副标签 = 长按直出。和主标签同一套中英文映射，但不进 Rime：
+        // 「<」在 punctuator 里是候选列表 [《, 〈, «, ‹]，进引擎就变成选词了。
+        String sub = punctLabel(pressed.spec.sub);
+        Log.e("SplitKey", "long press -> " + sub);
+        listener.onCharRaw(sub);
+        invalidate();
     };
 
     /**
@@ -333,7 +337,9 @@ public class KeyboardView extends View {
                 // 中英状态：空格左侧印出来，不用猜现在打的是哪种
                 subPaint.setColor(white ? 0xAAFFFFFF : C_SUB);
                 subPaint.setTextAlign(Paint.Align.LEFT);
-                c.drawText(asciiMode ? "EN" : "中", k.r.left + 18,
+                // EN / 中， / 中, —— 一眼看出下一个标点是全角还是半角
+                String mode = asciiMode ? "EN" : (punctAscii() ? "中," : "中，");
+                c.drawText(mode, k.r.left + 18,
                         k.r.centerY() + subPaint.getTextSize() * 0.36f, subPaint);
                 subPaint.setTextAlign(Paint.Align.CENTER);
             } else if (k.spec.sub != null) {
@@ -346,7 +352,7 @@ public class KeyboardView extends View {
                     // 副标签 = shift 字符，随 shift 变色（真键盘：! 和 1 印在同一键）
                     subPaint.setColor(up ? (white ? 0xFFFFFFFF : C_TEXT)
                                           : (white ? 0x66FFFFFF : C_SUB_FAINT));
-                    c.drawText(k.spec.sub, k.r.centerX(),
+                    c.drawText(punctLabel(k.spec.sub), k.r.centerX(),
                             k.r.top + subPaint.getTextSize() * 1.6f, subPaint);
 
                     textPaint.setColor(up ? (white ? 0x66FFFFFF : C_TEXT_FAINT)
@@ -356,7 +362,7 @@ public class KeyboardView extends View {
                 } else {
                     // 普通态：数字只是「可长按输入」的提示，字母才是主角
                     subPaint.setColor(white ? 0xCCFFFFFF : C_SUB);
-                    c.drawText(k.spec.sub, k.r.centerX(),
+                    c.drawText(punctLabel(k.spec.sub), k.r.centerX(),
                             k.r.top + subPaint.getTextSize() * 1.6f, subPaint);
 
                     textPaint.setColor(white ? 0xFFFFFFFF : C_TEXT);
@@ -506,6 +512,24 @@ public class KeyboardView extends View {
             else listener.onKey(code);
         } else if (a.startsWith("char:")) {
             String out = a.substring(5);
+            // 标点在「该出半角」时绕开 Rime 直出：
+            //   Ctrl      → 强制半角（英文模式下也走这里，省一次引擎空转）
+            //   Shift     → 取反：中文模式出半角
+            // 全角的情况照旧交给 Rime 的 punctuator 映射。
+            if (out.length() == 1 && !Character.isLetterOrDigit(out.charAt(0))
+                    && out.charAt(0) != ' ' && punctAscii()) {
+                listener.onCharRaw(out);
+                consumeArmed();
+                return;
+            }
+            // 反向：英文模式按 Shift → 标点要全角。Rime 此时是 ASCII 模式
+            // 不管标点，所以在这里自己映射成全角再直出。
+            if (out.length() == 1 && !Character.isLetterOrDigit(out.charAt(0))
+                    && out.charAt(0) != ' ' && asciiMode && shiftState > 0) {
+                listener.onCharRaw(punctLabel(out));
+                consumeArmed();
+                return;
+            }
             if (upper() && out.length() == 1 && Character.isLetter(out.charAt(0))) {
                 out = out.toUpperCase();
             }
@@ -539,15 +563,42 @@ public class KeyboardView extends View {
      * 不然按了 ⇧ 键面还是 ', . 1'，只有打进输入框才看得出变成了 '< > !'。
      */
     /**
-     * 键面标点：中文模式下画全角，和 Rime 实际吐的字对上。
-     * 只映射键盘上真有的这三个键；其余原样返回。
+     * 下次按标点键会不会出半角 ASCII。
+     *
+     * 三种状态，各自取反：
+     *   中文模式        → 全角
+     *   英文模式        → 半角
+     *   Shift（临时）   → 把当前状态反过来：中文出半角，英文出全角
+     * Ctrl（临时）    → 强制半角，不问当前模式
+     */
+    private boolean punctAscii() {
+        if (ctrlState > 0) return true;
+        if (shiftState > 0) return !asciiMode;
+        return asciiMode;
+    }
+
+    /**
+     * 键面标点：中文画全角、英文/Shift/Ctrl 画半角 —— 和实际输出一致，
+     * 不让人猜现在打的是哪种。主标签和副标签共用这一套。
      */
     private String punctLabel(String s) {
-        if (asciiMode || s.length() != 1) return s;
+        if (s == null || s.length() != 1 || punctAscii()) return s;
         switch (s.charAt(0)) {
             case ',': return "，";
             case '.': return "。";
             case '/': return "、";
+            case '<': return "《";
+            case '>': return "》";
+            case '?': return "？";
+            case ';': return "；";
+            case ':': return "：";
+            case '!': return "！";
+            case '(': return "（";
+            case ')': return "）";
+            case '[': return "【";
+            case ']': return "】";
+            case '-': return "－";
+            case '=': return "＝";
             default:  return s;
         }
     }
